@@ -59,4 +59,48 @@ exports.getAllPayments = async (req, res) => {
     console.error("GET ALL PAYMENTS ERROR:", err);
     res.status(500).json({ message: "Erreur serveur" });
   }
+  /**
+ * USER - GET MY PAYMENTS
+ */
+exports.getMyPayments = async (req, res) => {
+  try {
+    const payments = await pool.query(
+      `
+      SELECT p.*, r.start_date, r.end_date
+      FROM payments p
+      JOIN rentals r ON r.id = p.rental_id
+      WHERE p.user_id = $1
+      ORDER BY p.created_at DESC
+      `,
+      [req.user.id]
+    );
+
+    res.json(payments.rows);
+  } catch (err) {
+    console.error("MY PAYMENTS ERROR:", err);
+    res.status(500).json({ message: "Erreur serveur" });
+  }
+};
+/**
+ * ADMIN - GET ALL PAYMENTS
+ */
+exports.getAllPayments = async (req, res) => {
+  try {
+    const payments = await pool.query(
+      `
+      SELECT p.*, u.email, r.start_date, r.end_date
+      FROM payments p
+      JOIN users u ON u.id = p.user_id
+      JOIN rentals r ON r.id = p.rental_id
+      ORDER BY p.created_at DESC
+      `
+    );
+
+    res.json(payments.rows);
+  } catch (err) {
+    console.error("GET ALL PAYMENTS ERROR:", err);
+    res.status(500).json({ message: "Erreur serveur" });
+  }
+};
+
 };

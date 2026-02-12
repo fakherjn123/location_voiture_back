@@ -84,10 +84,14 @@ exports.login = async (req, res) => {
     }
 
     const token = jwt.sign(
-      { id: user.id, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: "1h" }
-    );
+  {
+    id: user.id,
+    role: user.role,   // 🔴 OBLIGATOIRE
+    email: user.email
+  },
+  process.env.JWT_SECRET,
+  { expiresIn: "1h" }
+);
 
     res.json({
       message: "Login success",
@@ -129,7 +133,40 @@ exports.getUserRentals = async (req, res) => {
   );
   res.json(rentals.rows);
 };
+exports.getMyProfile = async (req, res) => {
+  try {
+    const user = await pool.query(
+      "SELECT id, name, email, role, points FROM users WHERE id = $1",
+      [req.user.id]
+    );
 
+    res.json(user.rows[0]);
+  } catch (error) {
+    res.status(500).json({ message: "Server error" });
+  }
+};
+exports.updateMyProfile = async (req, res) => {
+  try {
+    const { name, email } = req.body;
+
+    const user = await pool.query(
+      `
+      UPDATE users
+      SET name = $1, email = $2
+      WHERE id = $3
+      RETURNING id, name, email
+      `,
+      [name, email, req.user.id]
+    );
+
+    res.json({
+      message: "Profile updated successfully",
+      user: user.rows[0]
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Server error" });
+  }
+};
 /**
  * =========================
  * LOGOUT

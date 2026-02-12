@@ -35,7 +35,26 @@ exports.getCars = async (req, res) => {
     res.status(500).json({ message: "Erreur serveur" });
   }
 };
+ //🚘 GET CAR DETAILS (PUBLIC – VISITEUR)
+ 
+exports.getCarById = async (req, res) => {
+  try {
+    const { id } = req.params;
 
+    const car = await pool.query(
+      "SELECT id, brand, model, price_per_day, available FROM cars WHERE id = $1",
+      [id]
+    );
+
+    if (car.rows.length === 0) {
+      return res.status(404).json({ message: "Car not found" });
+    }
+
+    res.json(car.rows[0]);
+  } catch (error) {
+    res.status(500).json({ message: "Server error" });
+  }
+};
 /**
  * ➕ ADD CAR (ADMIN)
  */
@@ -100,6 +119,28 @@ exports.updateCar = async (req, res) => {
   } catch (error) {
     console.error("UPDATE CAR ERROR:", error);
     res.status(500).json({ message: "Erreur serveur" });
+  }
+};
+exports.getRentedCars = async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        cars.id AS car_id,
+        cars.brand,
+        cars.model,
+        rentals.start_date,
+        rentals.end_date,
+        users.email AS client_email
+      FROM rentals
+      JOIN cars ON cars.id = rentals.car_id
+      JOIN users ON users.id = rentals.user_id
+      ORDER BY rentals.start_date DESC
+    `);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("GET RENTED CARS ERROR:", error.message);
+    res.status(500).json({ message: "Server error" });
   }
 };
 

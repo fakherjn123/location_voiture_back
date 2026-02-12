@@ -28,5 +28,7 @@ router.get("/", auth, role(["admin"]), userController.getUsers);
  * =========================
  */
 router.get("/my-rentals", auth, userController.getUserRentals);
+router.put("/me", auth, userController.updateMyProfile);
+router.get("/me", auth, userController.getMyProfile);
 
 module.exports = router;
