@@ -1,106 +1,220 @@
 const pool = require("../config/db");
+const { sendEmail } = require("../services/email.service");
 
 /**
- * USER - CREATE PAYMENT
+ * USER - Create Payment
  */
 exports.createPayment = async (req, res) => {
   try {
-    const { rental_id, amount, method } = req.body;
+    const { rental_id, method } = req.body;
+    const user_id = req.user.id;
 
-    if (!rental_id || !amount || !method) {
-      return res.status(400).json({ message: "Champs requis manquants" });
+    const rentalResult = await pool.query(
+      `SELECT rentals.*, users.email
+       FROM rentals
+       JOIN users ON users.id = rentals.user_id
+       WHERE rentals.id = $1 AND rentals.user_id = $2`,
+      [rental_id, user_id]
+    );
+
+    if (rentalResult.rows.length === 0) {
+      return res.status(404).json({ message: "Rental not found" });
     }
 
-    const payment = await pool.query(
-      `INSERT INTO payments (rental_id, amount, method)
-       VALUES ($1, $2, $3)
+    const rental = rentalResult.rows[0];
+
+    let paymentStatus = "pending";
+    let rentalStatus = "awaiting_payment";
+
+    if (method === "card") {
+      paymentStatus = "paid";
+      rentalStatus = "confirmed";
+    }
+
+    const paymentResult = await pool.query(
+      `INSERT INTO payments (rental_id, amount, method, status)
+       VALUES ($1, $2, $3, $4)
        RETURNING *`,
-      [rental_id, amount, method]
+      [rental_id, rental.total_price, method, paymentStatus]
     );
 
-    res.status(201).json(payment.rows[0]);
-  } catch (err) {
-    console.error("CREATE PAYMENT ERROR:", err);
-    res.status(500).json({ message: "Erreur serveur" });
+    const payment = paymentResult.rows[0];
+
+    await pool.query(
+      `UPDATE rentals SET status = $1 WHERE id = $2`,
+      [rentalStatus, rental_id]
+    );
+
+    let subject;
+    let htmlTemplate;
+
+    if (method === "card") {
+      subject = "Paiement Confirmé - Jnayeh Location";
+
+      htmlTemplate = `
+      <!DOCTYPE html>
+      <html>
+      <body style="margin:0;background:#f4f6f9;font-family:Arial;">
+      <table width="100%" style="padding:30px 0;">
+      <tr><td align="center">
+
+      <table width="600" style="background:#fff;border-radius:12px;overflow:hidden;">
+        <tr>
+          <td style="background:#000;padding:30px;text-align:center;">
+            <h1 style="color:#fff;margin:0;">🚗 Jnayeh Location</h1>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:40px;text-align:center;">
+            <h2 style="color:#28a745;">Paiement Confirmé</h2>
+            <p>Votre réservation est maintenant confirmée.</p>
+
+            <table width="100%" style="margin-top:20px;">
+              <tr>
+                <td align="left">Facture N°</td>
+                <td align="right"><strong>${payment.id}</strong></td>
+              </tr>
+              <tr>
+                <td align="left">Montant</td>
+                <td align="right"><strong>${payment.amount} TND</strong></td>
+              </tr>
+              <tr>
+                <td align="left">Méthode</td>
+                <td align="right"><strong>${payment.method}</strong></td>
+              </tr>
+            </table>
+
+          </td>
+        </tr>
+
+        <tr>
+          <td style="background:#fafafa;padding:20px;text-align:center;font-size:12px;color:#888;">
+            Merci pour votre confiance 🚗
+          </td>
+        </tr>
+
+      </table>
+
+      </td></tr>
+      </table>
+      </body>
+      </html>
+      `;
+
+    } else {
+      subject = "Réservation Enregistrée - Jnayeh Location";
+
+      htmlTemplate = `
+      <!DOCTYPE html>
+      <html>
+      <body style="margin:0;background:#f4f6f9;font-family:Arial;">
+      <table width="100%" style="padding:30px 0;">
+      <tr><td align="center">
+
+      <table width="600" style="background:#fff;border-radius:12px;overflow:hidden;">
+        <tr>
+          <td style="background:#111;padding:30px;text-align:center;">
+            <h1 style="color:#fff;margin:0;">🚗 Jnayeh Location</h1>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:40px;text-align:center;">
+            <h2 style="color:#ff9800;">Réservation enregistrée</h2>
+            <p>Veuillez effectuer le paiement sur place.</p>
+            <p>Facture N° : <strong>${payment.id}</strong></p>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="background:#fafafa;padding:20px;text-align:center;font-size:12px;color:#888;">
+            Merci pour votre confiance 🚗
+          </td>
+        </tr>
+
+      </table>
+
+      </td></tr>
+      </table>
+      </body>
+      </html>
+      `;
+    }
+
+    await sendEmail({
+      to: rental.email,
+      subject,
+      html: htmlTemplate,
+    });
+
+    res.json({
+      message: "Payment processed successfully",
+      payment,
+    });
+
+  } catch (error) {
+    console.error("PAYMENT ERROR:", error);
+    res.status(500).json({ message: "Server error" });
   }
 };
+
 
 /**
- * USER - GET MY PAYMENTS
+ * ADMIN - Confirm Cash Payment
  */
-exports.getMyPayments = async (req, res) => {
+exports.confirmCashPayment = async (req, res) => {
   try {
-    const payments = await pool.query(
-      `SELECT p.*
-       FROM payments p
-       JOIN rentals r ON r.id = p.rental_id
-       WHERE r.user_id = $1`,
-      [req.user.id]
+    const { payment_id } = req.params;
+
+    const paymentResult = await pool.query(
+      `SELECT payments.*, rentals.user_id, users.email
+       FROM payments
+       JOIN rentals ON rentals.id = payments.rental_id
+       JOIN users ON users.id = rentals.user_id
+       WHERE payments.id = $1`,
+      [payment_id]
     );
 
-    res.json(payments.rows);
-  } catch (err) {
-    console.error("MY PAYMENTS ERROR:", err);
-    res.status(500).json({ message: "Erreur serveur" });
-  }
-};
+    if (paymentResult.rows.length === 0) {
+      return res.status(404).json({ message: "Payment not found" });
+    }
 
-/**
- * ADMIN - GET ALL PAYMENTS
- */
-exports.getAllPayments = async (req, res) => {
-  try {
-    const payments = await pool.query(
-      "SELECT * FROM payments ORDER BY id DESC"
+    const payment = paymentResult.rows[0];
+
+    await pool.query(
+      `UPDATE payments SET status = 'paid' WHERE id = $1`,
+      [payment_id]
     );
 
-    res.json(payments.rows);
-  } catch (err) {
-    console.error("GET ALL PAYMENTS ERROR:", err);
-    res.status(500).json({ message: "Erreur serveur" });
-  }
-  /**
- * USER - GET MY PAYMENTS
- */
-exports.getMyPayments = async (req, res) => {
-  try {
-    const payments = await pool.query(
-      `
-      SELECT p.*, r.start_date, r.end_date
-      FROM payments p
-      JOIN rentals r ON r.id = p.rental_id
-      WHERE p.user_id = $1
-      ORDER BY p.created_at DESC
-      `,
-      [req.user.id]
+    await pool.query(
+      `UPDATE rentals SET status = 'confirmed' WHERE id = $1`,
+      [payment.rental_id]
     );
 
-    res.json(payments.rows);
-  } catch (err) {
-    console.error("MY PAYMENTS ERROR:", err);
-    res.status(500).json({ message: "Erreur serveur" });
-  }
-};
-/**
- * ADMIN - GET ALL PAYMENTS
- */
-exports.getAllPayments = async (req, res) => {
-  try {
-    const payments = await pool.query(
-      `
-      SELECT p.*, u.email, r.start_date, r.end_date
-      FROM payments p
-      JOIN users u ON u.id = p.user_id
-      JOIN rentals r ON r.id = p.rental_id
-      ORDER BY p.created_at DESC
-      `
-    );
+    const htmlTemplate = `
+      <html>
+      <body style="font-family:Arial;background:#f4f6f9;padding:40px;text-align:center;">
+        <div style="background:#fff;padding:40px;border-radius:12px;">
+          <h2 style="color:#28a745;">Paiement confirmé</h2>
+          <p>Votre paiement en espèces a été validé.</p>
+          <p>Facture N° : <strong>${payment.id}</strong></p>
+          <p>Montant : <strong>${payment.amount} TND</strong></p>
+        </div>
+      </body>
+      </html>
+    `;
 
-    res.json(payments.rows);
-  } catch (err) {
-    console.error("GET ALL PAYMENTS ERROR:", err);
-    res.status(500).json({ message: "Erreur serveur" });
-  }
-};
+    await sendEmail({
+      to: payment.email,
+      subject: "Paiement Confirmé - Jnayeh Location",
+      html: htmlTemplate,
+    });
 
+    res.json({ message: "Cash payment confirmed successfully" });
+
+  } catch (error) {
+    console.error("CONFIRM CASH ERROR:", error);
+    res.status(500).json({ message: "Server error" });
+  }
 };

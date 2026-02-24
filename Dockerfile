@@ -1,20 +1,20 @@
-# Image Node officielle
+# Use Node image
 FROM node:18-alpine
 
-# Dossier de travail dans le conteneur
+# Create app directory
 WORKDIR /usr/src/app
 
-# Copier package.json et package-lock.json
+# Copy package files
 COPY package*.json ./
 
-# Installer les dépendances
-RUN npm install --production
+# Install dependencies
+RUN npm install
 
-# Copier tout le projet
+# Copy project files
 COPY . .
 
-# Exposer le port de l’API
+# Expose port
 EXPOSE 3000
 
-# Lancer le serveur
+# Start server
 CMD ["node", "src/server.js"]
