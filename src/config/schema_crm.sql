@@ -23,3 +23,13 @@ CREATE TABLE rentals (
     total_price NUMERIC,
     status VARCHAR(20) DEFAULT 'confirmed'
 );
+
+CREATE TABLE reviews (
+    id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id),
+    car_id INT REFERENCES cars(id),
+    rating INT CHECK (rating >= 1 AND rating <= 10),
+    comment TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unique_review UNIQUE (user_id, car_id)
+);

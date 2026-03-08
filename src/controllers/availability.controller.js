@@ -58,8 +58,15 @@ exports.checkAvailability = async (req, res) => {
       [car_id, start_date, end_date]
     );
 
+    const maintenanceCheck = await pool.query(
+      `SELECT 1 FROM services 
+       WHERE car_id = $1 
+         AND status = 'En maintenance'`,
+      [car_id]
+    );
+
     res.json({
-      available: conflict.rows.length === 0
+      available: conflict.rows.length === 0 && maintenanceCheck.rows.length === 0
     });
 
   } catch (error) {

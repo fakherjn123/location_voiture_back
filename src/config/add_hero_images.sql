@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS hero_images (
+    id SERIAL PRIMARY KEY,
+    image_url TEXT NOT NULL,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

@@ -9,103 +9,82 @@ exports.register = async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
-    // Validation
     if (!name || !email || !password) {
       return res.status(400).json({
         message: "Name, email and password are required",
       });
     }
 
-    // Vérifier si email existe déjà
-    const existingUser = await pool.query(
-      "SELECT id FROM users WHERE email = $1",
-      [email]
-    );
-
-    if (existingUser.rows.length > 0) {
-      return res.status(409).json({ message: "Email already exists" });
-    }
-
-    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const result = await pool.query(
-      "INSERT INTO users (name, email, password) VALUES ($1, $2, $3) RETURNING id, name, email, role",
+      "INSERT INTO users (name, email, password, role) VALUES ($1,$2,$3,'client') RETURNING id, name, email, role",
       [name, email, hashedPassword]
     );
 
     res.status(201).json(result.rows[0]);
-  } catch (error) {
-    console.error(error);
+
+  } catch (err) {
+    console.error("REGISTER ERROR:", err);
     res.status(500).json({ message: "Server error" });
   }
 };
-exports.logout = (req, res) => {
-  res.clearCookie("token");
-  res.json({ message: "Logout successful" });
-};
+
 
 /**
- * LOGIN (JWT AUTOMATIQUE VIA COOKIE)
+ * LOGIN (JWT JSON VERSION)
  */
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    if (!email || !password) {
-      return res.status(400).json({
-        message: "Email and password are required",
-      });
-    }
-
-    const user = await pool.query(
+    const result = await pool.query(
       "SELECT * FROM users WHERE email = $1",
       [email]
     );
 
-    if (user.rows.length === 0) {
-      return res.status(401).json({ message: "Invalid credentials" });
+    if (result.rows.length === 0) {
+      return res.status(401).json({ message: "Email incorrect" });
     }
 
-    const valid = await bcrypt.compare(password, user.rows[0].password);
+    const user = result.rows[0];
+    const valid = await bcrypt.compare(password, user.password);
+
     if (!valid) {
-      return res.status(401).json({ message: "Invalid credentials" });
+      return res.status(401).json({ message: "Password incorrect" });
     }
 
-    // Générer JWT
     const token = jwt.sign(
-      { id: user.rows[0].id, role: user.rows[0].role },
+      {
+        id: user.id,
+        role: user.role,
+        email: user.email
+      },
       process.env.JWT_SECRET,
-      { expiresIn: "1d" }
+      { expiresIn: "7d" }   // 🔥 extended for dev
     );
 
-    // ✅ Stocker le token automatiquement dans un cookie
-    res.cookie("token", token, {
-      httpOnly: true,
-      secure: false, // true en production HTTPS
-      sameSite: "strict",
-      maxAge: 24 * 60 * 60 * 1000, // 1 jour
+    res.json({
+      message: "Login success",
+      token,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role
+      }
     });
 
-    res.json({
-      message: "Login successful",
-      user: {
-        id: user.rows[0].id,
-        name: user.rows[0].name,
-        email: user.rows[0].email,
-        role: user.rows[0].role,
-      },
-    });
-  } catch (error) {
-    console.error(error);
+  } catch (err) {
+    console.error("LOGIN ERROR:", err);
     res.status(500).json({ message: "Server error" });
   }
 };
 
+
 /**
- * LOGOUT (BONUS PRO)
+ * LOGOUT
  */
 exports.logout = (req, res) => {
-  res.clearCookie("token");
-  res.json({ message: "Logout successful" });
+  res.status(200).json({ message: "Logout successful" });
 };

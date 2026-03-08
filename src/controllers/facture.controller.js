@@ -1,6 +1,7 @@
 const pool = require("../config/db");
-const generatePDF = require("../utils/generateFacturePDF");
-const path = require("path");
+const { generateFacture } = require("../utils/generateFacturePDF");
+const fs = require("fs");
+
 /**
  * 📄 TÉLÉCHARGER MA FACTURE PDF
  */
@@ -11,10 +12,9 @@ exports.downloadFacturePDF = async (req, res) => {
     let query;
     let values;
 
-    // 👑 ADMIN peut voir toutes les factures
     if (req.user.role === "admin") {
       query = `
-        SELECT f.*, u.email, c.brand, c.model, r.start_date, r.end_date
+        SELECT f.*, u.email, r.start_date, r.end_date, c.brand, c.model
         FROM facture f
         JOIN users u ON u.id = f.user_id
         JOIN rentals r ON r.id = f.rental_id
@@ -22,11 +22,9 @@ exports.downloadFacturePDF = async (req, res) => {
         WHERE f.id = $1
       `;
       values = [id];
-    } 
-    // 👤 CLIENT voit seulement sa facture
-    else {
+    } else {
       query = `
-        SELECT f.*, u.email, c.brand, c.model, r.start_date, r.end_date
+        SELECT f.*, u.email, r.start_date, r.end_date, c.brand, c.model
         FROM facture f
         JOIN users u ON u.id = f.user_id
         JOIN rentals r ON r.id = f.rental_id
@@ -36,20 +34,49 @@ exports.downloadFacturePDF = async (req, res) => {
       values = [id, req.user.id];
     }
 
-    const facture = await pool.query(query, values);
+    const result = await pool.query(query, values);
 
-    if (facture.rows.length === 0) {
-      return res.status(404).json({ message: "Facture introuvable" });
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "Facture not found" });
     }
 
-    res.json(facture.rows[0]);
+    const facture = result.rows[0];
+
+    const payment = {
+      id: facture.id,
+      amount: facture.total,
+      method: "card"
+    };
+
+    const rental = {
+      id: facture.rental_id,
+      start_date: facture.start_date,
+      end_date: facture.end_date
+    };
+
+    const user = {
+      email: facture.email
+    };
+
+    const car = {
+      brand: facture.brand,
+      model: facture.model
+    };
+
+    // 🔥 IMPORTANT FIX
+    const filePath = await generateFacture(payment, rental, user, car);
+
+    res.download(filePath, `facture-${facture.id}.pdf`, (err) => {
+      if (!err && fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath); // delete after download
+      }
+    });
 
   } catch (error) {
-    console.error("DOWNLOAD FACTURE ERROR:", error);
-    res.status(500).json({ message: "Erreur serveur" });
+    console.error("PDF DOWNLOAD ERROR:", error);
+    res.status(500).json({ message: "Server error" });
   }
 };
-
 /**
  * 📄 GET MY FACTURES (CLIENT)
  * Factures générées automatiquement après location terminée

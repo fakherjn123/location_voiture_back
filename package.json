@@ -11,19 +11,24 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
     "@google/genai": "^1.41.0",
+    "@google/generative-ai": "^0.24.1",
     "bcrypt": "^5.1.0",
     "body-parser": "^2.2.2",
     "cookie-parser": "^1.4.7",
-    "cors": "^2.8.5",
+    "cors": "^2.8.6",
     "dotenv": "^16.6.1",
     "express": "^4.22.1",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.2",
     "nodemailer": "^8.0.1",
+    "passport": "^0.7.0",
+    "passport-google-oauth20": "^2.0.0",
     "path": "^0.12.7",
     "pdfkit": "^0.17.2",
-    "pg": "^8.11.3"
+    "pg": "^8.11.3",
+    "recharts": "^3.7.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.11"

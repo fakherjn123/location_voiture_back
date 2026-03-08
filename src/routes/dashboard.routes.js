@@ -4,7 +4,9 @@ const router = express.Router();
 const {
   getStats,
   getFinancialStats,
-  getTopCars
+  getTopCars,
+  getAIInsights,
+  getMonthlyHistory
 } = require("../controllers/dashboard.controller");
 
 const authMiddleware = require("../middlewares/auth.middleware");
@@ -32,6 +34,22 @@ router.get(
   authMiddleware,
   roleMiddleware(["admin"]),
   getTopCars
+);
+
+// 🧠 IA Insights
+router.get(
+  "/insights",
+  authMiddleware,
+  roleMiddleware(["admin"]),
+  getAIInsights
+);
+
+// 📅 Historique
+router.get(
+  "/history",
+  authMiddleware,
+  roleMiddleware(["admin"]),
+  getMonthlyHistory
 );
 
 module.exports = router;

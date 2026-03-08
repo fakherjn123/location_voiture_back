@@ -1,7 +1,10 @@
 const pool = require("../config/db");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 
-/**
- * 📊 DASHBOARD GLOBAL
+// Gemini API Initialization
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
+/** 📊 DASHBOARD GLOBAL
  * ADMIN ONLY
  */
 exports.getStats = async (req, res) => {
@@ -31,20 +34,18 @@ exports.getStats = async (req, res) => {
   }
 };
 
-
 /**
  * 💰 DASHBOARD FINANCIER
  * ADMIN ONLY
  */
 exports.getFinancialStats = async (req, res) => {
   try {
-
     const financial = await pool.query(`
       SELECT
         (SELECT COUNT(*) FROM payments) AS total_payments,
         (SELECT COUNT(*) FROM payments WHERE status = 'paid') AS paid_payments,
-        (SELECT COALESCE(SUM(amount),0) FROM payments WHERE status = 'paid') AS total_revenue,
-        (SELECT COALESCE(SUM(amount),0)
+        (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE status = 'paid') AS total_revenue,
+        (SELECT COALESCE(SUM(amount), 0)
          FROM payments
          WHERE status = 'paid'
          AND DATE_TRUNC('month', created_at) = DATE_TRUNC('month', CURRENT_DATE)
@@ -66,13 +67,11 @@ exports.getFinancialStats = async (req, res) => {
   }
 };
 
-
 /**
  * 🚗 TOP 5 VOITURES LES PLUS LOUÉES
  */
 exports.getTopCars = async (req, res) => {
   try {
-
     const topCars = await pool.query(`
       SELECT cars.id, cars.brand, cars.model,
              COUNT(rentals.id) AS total_rentals
@@ -88,5 +87,98 @@ exports.getTopCars = async (req, res) => {
   } catch (error) {
     console.error("TOP CARS ERROR:", error);
     res.status(500).json({ message: "Erreur serveur top cars" });
+  }
+};
+
+/**
+ * 🧠 AI BUSINESS INSIGHTS (Google Gemini)
+ */
+exports.getAIInsights = async (req, res) => {
+  try {
+    // 1. Récupération des données métiers globales
+    const carsData = await pool.query("SELECT COUNT(*) as total, SUM(CASE WHEN available=true THEN 1 ELSE 0 END) as available FROM cars");
+    const financials = await pool.query("SELECT COALESCE(SUM(amount),0) as revenue FROM payments WHERE status='paid' AND DATE_TRUNC('month', created_at) = DATE_TRUNC('month', CURRENT_DATE)");
+    const badReviews = await pool.query("SELECT rating, comment FROM reviews WHERE rating <= 3 ORDER BY created_at DESC LIMIT 3");
+
+    const countTotal = carsData.rows[0].total;
+    const countAvail = carsData.rows[0].available;
+    const revenue = financials.rows[0].revenue;
+    const strReviews = JSON.stringify(badReviews.rows);
+
+    // 2. Préparation du Prompt
+    const prompt = `Tu es l'Analyste Stratégique Expert de 'BMZ Location', une agence de location de voitures tunisienne.
+Voici les données actuelles de l'agence pour ce mois :
+- Nombre total de voitures: ${countTotal} (dont ${countAvail} disponibles actuellement).
+- Revenu du mois en cours: ${revenue} TND.
+- Derniers avis clients (s'il y en a) : ${strReviews}.
+
+Ta mission : Analyse cette situation et fournis une analyse chiffrée.
+Retourne UNIQUEMENT un objet JSON STRICT contenant exactement cette structure :
+{
+  "chartData": [
+    { "name": "Mois Actuel", "revenue": [chiffre actuel], "target": [objectif fixé par toi], "occupancy": [taux d'occupation réel actuel tiré des chiffres, ex: 80] },
+    { "name": "Dans 1 Mois", "revenue": [prévision IA prudente], "target": [objectif], "occupancy": [taux d'occupation prévu en %] },
+    { "name": "Dans 2 Mois", "revenue": [prévision IA optimiste], "target": [objectif], "occupancy": [taux d'occupation prévu en %] }
+  ],
+  "insights": [
+    { "title": "Titre action 1", "description": "Explication avec des chiffres (ex: '+15% attendu')" },
+    { "title": "Titre action 2", "description": "Explication avec des chiffres" },
+    { "title": "Titre action 3", "description": "Explication avec des chiffres" }
+  ]
+}
+Ne fais aucune introduction ni conclusion, juste le JSON pur.`;
+
+    // 3. Appel à Gemini
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+    const result = await model.generateContent({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: {
+        responseMimeType: "application/json",
+      }
+    });
+
+    const responseText = result.response.text();
+    const insights = JSON.parse(responseText);
+
+    res.json({ insights });
+
+  } catch (error) {
+    console.error("AI INSIGHTS ERROR:", error);
+    // On renvoie un message propre au frontend même en cas d'échec de l'IA
+    res.status(500).json({
+      message: "Erreur lors de la génération IA",
+      details: error.message
+    });
+  }
+};
+
+/**
+ * 📅 HISTORIQUE MENSUEL (12 derniers mois)
+ */
+exports.getMonthlyHistory = async (req, res) => {
+  try {
+    const sql = `
+      SELECT
+        TO_CHAR(DATE_TRUNC('month', created_at), 'YYYY-MM') AS month,
+        TO_CHAR(DATE_TRUNC('month', created_at), 'Mon YYYY') AS month_label,
+        COALESCE(SUM(amount), 0) AS revenue,
+        COUNT(*) AS payment_count
+      FROM payments
+      WHERE status = 'paid'
+        AND created_at >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '11 months')
+      GROUP BY DATE_TRUNC('month', created_at)
+      ORDER BY DATE_TRUNC('month', created_at) ASC
+    `;
+    const result = await pool.query(sql);
+    res.json(result.rows.map(r => ({
+      month: r.month,
+      month_label: r.month_label,
+      revenue: Number(r.revenue),
+      payment_count: Number(r.payment_count),
+    })));
+  } catch (error) {
+    console.error('MONTHLY HISTORY ERROR:', error);
+    res.status(500).json({ message: 'Erreur serveur historique mensuel' });
   }
 };

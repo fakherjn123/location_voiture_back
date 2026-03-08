@@ -84,14 +84,14 @@ exports.login = async (req, res) => {
     }
 
     const token = jwt.sign(
-  {
-    id: user.id,
-    role: user.role,   // 🔴 OBLIGATOIRE
-    email: user.email
-  },
-  process.env.JWT_SECRET,
-  { expiresIn: "1h" }
-);
+      {
+        id: user.id,
+        role: user.role,   // 🔴 OBLIGATOIRE
+        email: user.email
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: "1d" }
+    );
 
     res.json({
       message: "Login success",
@@ -115,10 +115,28 @@ exports.login = async (req, res) => {
  * =========================
  */
 exports.getUsers = async (req, res) => {
-  const users = await pool.query(
-    "SELECT id, name, email, role FROM users"
-  );
-  res.json(users.rows);
+  try {
+    const users = await pool.query(`
+      SELECT 
+        u.id, 
+        u.name, 
+        u.email, 
+        u.role,
+        (SELECT COUNT(*) FROM rentals r WHERE r.user_id = u.id) as total_rentals,
+        (
+          SELECT COALESCE(SUM(p.amount), 0) 
+          FROM rentals r 
+          JOIN payments p ON r.id = p.rental_id 
+          WHERE r.user_id = u.id AND p.status = 'paid'
+        ) as total_spent
+      FROM users u
+      ORDER BY u.role, u.name
+    `);
+    res.json(users.rows);
+  } catch (error) {
+    console.error("GET USERS ERROR:", error);
+    res.status(500).json({ message: "Erreur serveur" });
+  }
 };
 
 /**
