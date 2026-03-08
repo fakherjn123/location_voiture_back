@@ -4,25 +4,17 @@ const authController = require("../controllers/auth.controller");
 const passport = require("passport");
 const jwt = require("jsonwebtoken");
 
-/* =========================
-   NORMAL AUTH
-========================= */
 
 router.post("/register", authController.register);
 router.post("/login", authController.login);
 router.post("/logout", authController.logout);
 
-/* =========================
-   GOOGLE OAUTH
-========================= */
 
-// Redirect vers Google
 router.get(
   "/google",
   passport.authenticate("google", { scope: ["profile", "email"] })
 );
 
-// Callback Google
 router.get(
   "/google/callback",
   passport.authenticate("google", { session: false }),

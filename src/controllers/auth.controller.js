@@ -2,9 +2,7 @@ const pool = require("../config/db");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 
-/**
- * REGISTER
- */
+
 exports.register = async (req, res) => {
   try {
     const { name, email, password } = req.body;
@@ -31,9 +29,7 @@ exports.register = async (req, res) => {
 };
 
 
-/**
- * LOGIN (JWT JSON VERSION)
- */
+
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -61,7 +57,7 @@ exports.login = async (req, res) => {
         email: user.email
       },
       process.env.JWT_SECRET,
-      { expiresIn: "7d" }   // 🔥 extended for dev
+      { expiresIn: "7d" }   
     );
 
     res.json({
@@ -82,9 +78,7 @@ exports.login = async (req, res) => {
 };
 
 
-/**
- * LOGOUT
- */
+
 exports.logout = (req, res) => {
   res.status(200).json({ message: "Logout successful" });
 };

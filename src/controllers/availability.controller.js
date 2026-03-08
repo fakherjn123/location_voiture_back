@@ -1,8 +1,6 @@
 const pool = require("../config/db");
 
-/**
- * 🔹 ADMIN – Bloquer / Débloquer voiture
- */
+
 exports.toggleAvailability = async (req, res) => {
   try {
     const { car_id } = req.params;
@@ -31,9 +29,8 @@ exports.toggleAvailability = async (req, res) => {
   }
 };
 
-/**
- * 🔹 PUBLIC – Vérifier disponibilité par dates
- */
+   
+
 exports.checkAvailability = async (req, res) => {
   try {
     const { car_id } = req.params;
@@ -75,9 +72,7 @@ exports.checkAvailability = async (req, res) => {
   }
 };
 
-/**
- * 🔹 PUBLIC – Lister voitures actives
- */
+
 exports.getActiveCars = async (req, res) => {
   try {
     const cars = await pool.query(

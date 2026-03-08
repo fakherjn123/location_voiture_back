@@ -2,11 +2,8 @@ const pool = require("../config/db");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 
-/**
- * =========================
- * REGISTER / ADD CLIENT
- * =========================
- */
+   
+
 exports.register = async (req, res) => {
   try {
     const { name, email, password } = req.body;
@@ -29,11 +26,8 @@ exports.register = async (req, res) => {
   }
 };
 
-/**
- * =========================
- * ADD CLIENT (ADMIN)
- * =========================
- */
+   
+
 exports.addClient = async (req, res) => {
   try {
     const { name, email, password } = req.body;
@@ -52,17 +46,7 @@ exports.addClient = async (req, res) => {
   }
 };
 
-/**
- * =========================
- * ADD ADMIN (ADMIN)
- * =========================
- */
-
-/**
- * =========================
- * LOGIN
- * =========================
- */
+ 
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -86,7 +70,7 @@ exports.login = async (req, res) => {
     const token = jwt.sign(
       {
         id: user.id,
-        role: user.role,   // 🔴 OBLIGATOIRE
+        role: user.role,  
         email: user.email
       },
       process.env.JWT_SECRET,
@@ -109,11 +93,8 @@ exports.login = async (req, res) => {
   }
 };
 
-/**
- * =========================
- * GET USERS (ADMIN)
- * =========================
- */
+   
+
 exports.getUsers = async (req, res) => {
   try {
     const users = await pool.query(`
@@ -139,11 +120,8 @@ exports.getUsers = async (req, res) => {
   }
 };
 
-/**
- * =========================
- * GET MY RENTALS (USER)
- * =========================
- */
+   
+ 
 exports.getUserRentals = async (req, res) => {
   const rentals = await pool.query(
     "SELECT * FROM rentals WHERE user_id = $1",
@@ -185,11 +163,8 @@ exports.updateMyProfile = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
-/**
- * =========================
- * LOGOUT
- * =========================
- */
+   
+ 
 exports.logout = (req, res) => {
   return res.status(200).json({
     message: "Déconnexion réussie"

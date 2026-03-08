@@ -1,6 +1,4 @@
-// ============================================================
-// car.controller.js — avec annonce automatique IA (Claude)
-// ============================================================
+
 const pool = require("../config/db");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { sendEmail } = require("../services/email.service");
@@ -8,9 +6,7 @@ const { sendEmail } = require("../services/email.service");
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const geminiModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-/**
- * 🤖 Génère une description marketing pour un nouveau véhicule
- */
+
 const generateCarAnnouncement = async (car) => {
   const prompt = `Tu es le rédacteur marketing de "BMZ Location", une agence de location de voitures premium.
 Rédige une annonce courte et percutante (3 phrases max) pour ce nouveau véhicule :
@@ -26,9 +22,8 @@ Style : enthousiaste, professionnel, engageant. Réponds directement avec l'anno
   return response.text().trim();
 };
 
-/**
- * 📢 Envoie l'annonce à tous les clients actifs
- */
+   
+ 
 const broadcastCarAnnouncement = async (car, announcement) => {
   try {
     const usersRes = await pool.query(
@@ -109,9 +104,8 @@ const broadcastCarAnnouncement = async (car, announcement) => {
   }
 };
 
-/**
- * 🤖 Génère une description avec l'IA pour l'ajouter manuellement 
- */
+   
+
 exports.generateDescription = async (req, res) => {
   try {
     const { brand, model, price_per_day } = req.body;
@@ -131,9 +125,6 @@ La description doit donner envie de louer la voiture. Réponds directement avec 
   }
 };
 
-// ─────────────────────────────────────────────────────────────
-// CRUD Cars
-// ─────────────────────────────────────────────────────────────
 
 exports.getCars = async (req, res) => {
   try {
@@ -162,9 +153,8 @@ exports.getCarById = async (req, res) => {
   } catch { res.status(500).json({ message: "Server error" }); }
 };
 
-/**
- * ➕ ADD CAR (ADMIN) — avec annonce automatique IA
- */
+   
+
 exports.addCar = async (req, res) => {
   try {
     const { brand, model, price_per_day, status, description, fuel_type, transmission } = req.body;
@@ -237,28 +227,21 @@ exports.deleteCar = async (req, res) => {
     const carId = req.params.id;
     await client.query("BEGIN");
 
-    // Fetch all rentals for this car
     const rentals = await client.query("SELECT id FROM rentals WHERE car_id=$1", [carId]);
     const rentalIds = rentals.rows.map(r => r.id);
 
     if (rentalIds.length > 0) {
-      // Delete factures associated with these rentals
       await client.query("DELETE FROM facture WHERE rental_id = ANY($1::int[])", [rentalIds]);
 
-      // Delete payments
       await client.query("DELETE FROM payments WHERE rental_id = ANY($1::int[])", [rentalIds]);
 
-      // Delete rentals
       await client.query("DELETE FROM rentals WHERE car_id=$1", [carId]);
     }
 
-    // Delete reviews
     await client.query("DELETE FROM reviews WHERE car_id=$1", [carId]);
 
-    // Delete from services just in case ON DELETE CASCADE is missing or fails
     await client.query("DELETE FROM services WHERE car_id=$1", [carId]);
 
-    // Delete the car
     const result = await client.query("DELETE FROM cars WHERE id=$1 RETURNING *", [carId]);
 
     if (!result.rows.length) {

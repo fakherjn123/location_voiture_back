@@ -1,6 +1,4 @@
-// ============================================================
-// review.controller.js — avec auto-réponse email IA (Claude)
-// ============================================================
+
 const pool = require("../config/db");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { sendEmail } = require("../services/email.service");
@@ -8,12 +6,8 @@ const { sendEmail } = require("../services/email.service");
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-/**
- * 🤖 Génère une réponse personnalisée via Claude
- */
-/**
- * 🤖 Helper logic: Génère une réponse personnalisée via Gemini
- */
+   
+ 
 const generateReviewReply = async (reviewData) => {
   const { rating, comment, carBrand, carModel, clientName } = reviewData;
 
@@ -37,9 +31,7 @@ Réponds directement, sans introduction ni guillemets.`;
   return response.text().trim();
 };
 
-/**
- * 🤖 API: Génère une réponse personnalisée via Gemini (Admin Preview)
- */
+ 
 exports.generateAiReply = async (req, res) => {
   try {
     const { rating, comment, car_brand, car_model, client_name } = req.body;
@@ -57,9 +49,8 @@ exports.generateAiReply = async (req, res) => {
   }
 };
 
-/**
- * 👀 GET REVIEWS FOR A CAR (VISITEUR)
- */
+   
+ 
 exports.getCarReviews = async (req, res) => {
   try {
     const { car_id } = req.params;
@@ -80,9 +71,8 @@ exports.getCarReviews = async (req, res) => {
   }
 };
 
-/**
- * ⭐ ADD REVIEW + AUTO EMAIL REPLY (CLIENT)
- */
+   
+ 
 exports.addReview = async (req, res) => {
   try {
     const { car_id, rating, comment } = req.body;
@@ -208,9 +198,8 @@ exports.addReview = async (req, res) => {
   }
 };
 
-/**
- * ✏️ UPDATE REVIEW
- */
+   
+ 
 exports.updateReview = async (req, res) => {
   try {
     const { id } = req.params;
@@ -234,9 +223,7 @@ exports.updateReview = async (req, res) => {
   }
 };
 
-/**
- * 🗑️ DELETE REVIEW
- */
+ 
 exports.deleteReview = async (req, res) => {
   try {
     const { id } = req.params;
@@ -251,9 +238,6 @@ exports.deleteReview = async (req, res) => {
   }
 };
 
-/**
- * 📋 TOUS LES AVIS (ADMIN)
- */
 exports.getAllReviews = async (req, res) => {
   try {
     const reviews = await pool.query(
@@ -269,9 +253,18 @@ exports.getAllReviews = async (req, res) => {
   }
 };
 
-/**
- * ✅ CHECK ELIGIBILITY (CLIENT)
- */
+   
+exports.deleteAllReviews = async (req, res) => {
+  try {
+    await pool.query("DELETE FROM reviews");
+    res.json({ message: "All reviews deleted" });
+  } catch (error) {
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+   
+ 
 exports.checkEligibility = async (req, res) => {
   try {
     if (!req.user || !req.user.id) return res.json({ eligible: false });
@@ -287,9 +280,8 @@ exports.checkEligibility = async (req, res) => {
   }
 };
 
-/**
- * 📧 SEND MANUAL REPLY (ADMIN)
- */
+   
+
 exports.sendManualReply = async (req, res) => {
   try {
     const { review_id, reply_text } = req.body;
@@ -298,7 +290,6 @@ exports.sendManualReply = async (req, res) => {
       return res.status(400).json({ message: "Missing review_id or reply_text" });
     }
 
-    // Récupérer les infos du client via l'avis
     const result = await pool.query(
       `SELECT u.email, u.name, c.brand, c.model, r.rating, r.comment
        FROM reviews r

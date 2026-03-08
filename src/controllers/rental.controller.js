@@ -1,8 +1,5 @@
 const pool = require("../config/db");
 
-/**
- * 🔄 Update rental statuses automatically + create facture only when completed
- */
 const updateRentalStatuses = async () => {
   const updated = await pool.query(`
     UPDATE rentals
@@ -18,7 +15,6 @@ const updateRentalStatuses = async () => {
     RETURNING *
   `);
 
-  // Create facture only when rental becomes completed
   for (const rental of updated.rows) {
     if (rental.status === "completed") {
       await pool.query(
@@ -32,9 +28,7 @@ const updateRentalStatuses = async () => {
 };
 
 
-/**
- * 🚗 RENT A CAR
- */
+   
 exports.rentCar = async (req, res) => {
   try {
     const { car_id, start_date, end_date } = req.body;
@@ -171,9 +165,7 @@ exports.rentCar = async (req, res) => {
 };
 
 
-/**
- * 📄 GET MY RENTALS (hide cancelled)
- */
+  
 exports.getMyRentals = async (req, res) => {
   try {
     await updateRentalStatuses();
@@ -199,9 +191,7 @@ exports.getMyRentals = async (req, res) => {
 };
 
 
-/**
- * ❌ CANCEL RENTAL
- */
+
 exports.cancelRental = async (req, res) => {
   try {
     const { id } = req.params;
@@ -234,9 +224,7 @@ exports.cancelRental = async (req, res) => {
   }
 };
 
-/**
- * 👑 GET ALL RENTALS (Admin only)
- */
+ 
 exports.getAllRentals = async (req, res) => {
   try {
     await updateRentalStatuses();
@@ -259,9 +247,8 @@ exports.getAllRentals = async (req, res) => {
   }
 };
 
-/**
- * 📅 GET BOOKED DATES FOR A CAR
- */
+   
+ 
 exports.getCarBookedDates = async (req, res) => {
   try {
     const { car_id } = req.params;

@@ -1,9 +1,7 @@
 const pool = require("../config/db");
 
-/**
- * POST /api/recommendation
- * Body: { budget, days, category? }
- */
+   
+ 
 exports.getRecommendation = async (req, res) => {
   try {
     let { budget, days, category } = req.body;

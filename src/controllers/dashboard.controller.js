@@ -1,12 +1,9 @@
 const pool = require("../config/db");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
-// Gemini API Initialization
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-/** 📊 DASHBOARD GLOBAL
- * ADMIN ONLY
- */
+  
 exports.getStats = async (req, res) => {
   try {
     const stats = await pool.query(`
@@ -34,10 +31,8 @@ exports.getStats = async (req, res) => {
   }
 };
 
-/**
- * 💰 DASHBOARD FINANCIER
- * ADMIN ONLY
- */
+   
+
 exports.getFinancialStats = async (req, res) => {
   try {
     const financial = await pool.query(`
@@ -67,9 +62,8 @@ exports.getFinancialStats = async (req, res) => {
   }
 };
 
-/**
- * 🚗 TOP 5 VOITURES LES PLUS LOUÉES
- */
+   
+ 
 exports.getTopCars = async (req, res) => {
   try {
     const topCars = await pool.query(`
@@ -90,9 +84,8 @@ exports.getTopCars = async (req, res) => {
   }
 };
 
-/**
- * 🧠 AI BUSINESS INSIGHTS (Google Gemini)
- */
+   
+ 
 exports.getAIInsights = async (req, res) => {
   try {
     // 1. Récupération des données métiers globales
@@ -145,7 +138,6 @@ Ne fais aucune introduction ni conclusion, juste le JSON pur.`;
 
   } catch (error) {
     console.error("AI INSIGHTS ERROR:", error);
-    // On renvoie un message propre au frontend même en cas d'échec de l'IA
     res.status(500).json({
       message: "Erreur lors de la génération IA",
       details: error.message
@@ -153,9 +145,8 @@ Ne fais aucune introduction ni conclusion, juste le JSON pur.`;
   }
 };
 
-/**
- * 📅 HISTORIQUE MENSUEL (12 derniers mois)
- */
+   
+
 exports.getMonthlyHistory = async (req, res) => {
   try {
     const sql = `

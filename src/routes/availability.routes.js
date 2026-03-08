@@ -3,9 +3,8 @@ const auth = require("../middlewares/auth.middleware");
 const role = require("../middlewares/role.middleware");
 const availabilityController = require("../controllers/availability.controller");
 
-/**
- * ADMIN
- */
+   
+ 
 router.put(
   "/:car_id",
   auth,
@@ -13,9 +12,8 @@ router.put(
   availabilityController.toggleAvailability
 );
 
-/**
- * PUBLIC
- */
+   
+
 router.get(
   "/:car_id/check",
   availabilityController.checkAvailability

@@ -5,10 +5,8 @@ const auth = require("../middlewares/auth.middleware");
 const role = require("../middlewares/role.middleware");
 const paymentController = require("../controllers/payment.controller");
 
-// USER
 router.post("/", auth, paymentController.createPayment);
 
-// ADMIN
 router.get("/", auth, role(["admin"]), paymentController.getAllPayments);
 
 router.put(

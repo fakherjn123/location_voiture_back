@@ -12,7 +12,6 @@ const {
 const authMiddleware = require("../middlewares/auth.middleware");
 const roleMiddleware = require("../middlewares/role.middleware");
 
-// 📊 Stats générales
 router.get(
   "/stats",
   authMiddleware,
@@ -20,7 +19,6 @@ router.get(
   getStats
 );
 
-// 💰 Stats financières
 router.get(
   "/financial",
   authMiddleware,
@@ -28,7 +26,6 @@ router.get(
   getFinancialStats
 );
 
-// 🚗 Top voitures
 router.get(
   "/top-cars",
   authMiddleware,
@@ -36,7 +33,6 @@ router.get(
   getTopCars
 );
 
-// 🧠 IA Insights
 router.get(
   "/insights",
   authMiddleware,
@@ -44,7 +40,6 @@ router.get(
   getAIInsights
 );
 
-// 📅 Historique
 router.get(
   "/history",
   authMiddleware,

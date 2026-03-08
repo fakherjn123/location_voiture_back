@@ -1,9 +1,6 @@
 const pool = require("../config/db");
 const { sendEmail } = require("../services/email.service");
 
-/**
- * USER - Create Payment
- */
 exports.createPayment = async (req, res) => {
   try {
     const { rental_id, method } = req.body;
@@ -257,9 +254,7 @@ exports.createPayment = async (req, res) => {
 };
 
 
-/**
- * ADMIN - Confirm Cash Payment
- */
+   
 exports.confirmCashPayment = async (req, res) => {
   try {
     const { payment_id } = req.params;
@@ -289,7 +284,6 @@ exports.confirmCashPayment = async (req, res) => {
       [payment.rental_id]
     );
 
-    // Create facture immediately when cash payment is confirmed
     await pool.query(
       `INSERT INTO facture (user_id, rental_id, total)
        VALUES ($1, $2, $3)
@@ -380,9 +374,7 @@ exports.confirmCashPayment = async (req, res) => {
   }
 };
 
-/**
- * ADMIN - Get All Payments
- */
+   
 exports.getAllPayments = async (req, res) => {
   try {
     const result = await pool.query(

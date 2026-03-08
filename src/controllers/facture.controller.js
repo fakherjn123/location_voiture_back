@@ -2,9 +2,7 @@ const pool = require("../config/db");
 const { generateFacture } = require("../utils/generateFacturePDF");
 const fs = require("fs");
 
-/**
- * 📄 TÉLÉCHARGER MA FACTURE PDF
- */
+
 exports.downloadFacturePDF = async (req, res) => {
   try {
     const { id } = req.params;
@@ -77,10 +75,7 @@ exports.downloadFacturePDF = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
-/**
- * 📄 GET MY FACTURES (CLIENT)
- * Factures générées automatiquement après location terminée
- */
+   
 exports.getMyFacture = async (req, res) => {
   try {
     const factures = await pool.query(
@@ -113,9 +108,7 @@ exports.getMyFacture = async (req, res) => {
   }
 };
 
-/**
- * 📊 GET ALL FACTURES (ADMIN)
- */
+   
 exports.getAllFacture = async (req, res) => {
   try {
     const factures = await pool.query(

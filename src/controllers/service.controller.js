@@ -1,9 +1,7 @@
 const pool = require("../config/db");
 
-/**
- * GET /api/services
- * Retourne tous les entretiens/maintenances planifiés
- */
+   
+
 exports.getServices = async (req, res) => {
     try {
         const result = await pool.query(`
@@ -31,10 +29,8 @@ exports.getServices = async (req, res) => {
     }
 };
 
-/**
- * POST /api/services
- * Planifier un nouvel entretien
- */
+   
+
 exports.createService = async (req, res) => {
     try {
         const { car_id, service_type, details, due_date, estimated_cost } = req.body;
@@ -51,10 +47,8 @@ exports.createService = async (req, res) => {
     }
 };
 
-/**
- * PUT /api/services/:id/status
- * Changer le statut d'un entretien
- */
+   
+
 exports.updateServiceStatus = async (req, res) => {
     try {
         const { status } = req.body;
@@ -71,16 +65,12 @@ exports.updateServiceStatus = async (req, res) => {
     }
 };
 
-/**
- * GET /api/services/alerts
- * Retourne les alertes urgentes basées sur insurance_expiry si la colonne existe
- * Sinon retourne un tableau vide proprement
- */
+   
+
 exports.getAlerts = async (req, res) => {
     try {
         let alerts = [];
 
-        // 1. Alertes pour les entretiens planifiés (Vidange, pneus, etc.)
         const servicesAlerts = await pool.query(`
             SELECT 
                 s.car_id AS car_id,
