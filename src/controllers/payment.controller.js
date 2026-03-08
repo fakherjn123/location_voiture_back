@@ -7,14 +7,19 @@ const { sendEmail } = require("../services/email.service");
 exports.createPayment = async (req, res) => {
   try {
     const { rental_id, method } = req.body;
-    const user_id = req.user.id;
+
+    if (!rental_id || !method) {
+      return res.status(400).json({ message: "Missing fields" });
+    }
 
     const rentalResult = await pool.query(
-      `SELECT rentals.*, users.email
-       FROM rentals
-       JOIN users ON users.id = rentals.user_id
-       WHERE rentals.id = $1 AND rentals.user_id = $2`,
-      [rental_id, user_id]
+      `
+      SELECT rentals.*, users.email
+      FROM rentals
+      JOIN users ON users.id = rentals.user_id
+      WHERE rentals.id = $1
+      `,
+      [rental_id]
     );
 
     if (rentalResult.rows.length === 0) {
@@ -23,18 +28,35 @@ exports.createPayment = async (req, res) => {
 
     const rental = rentalResult.rows[0];
 
-    let paymentStatus = "pending";
-    let rentalStatus = "awaiting_payment";
-
-    if (method === "card") {
-      paymentStatus = "paid";
-      rentalStatus = "confirmed";
+    // 🔒 Vérifier propriétaire
+    if (rental.user_id !== req.user.id) {
+      return res.status(403).json({ message: "Unauthorized rental" });
     }
 
+    // FIX #4: Empêcher le double paiement
+    const existingPayment = await pool.query(
+      `SELECT 1 FROM payments WHERE rental_id = $1`,
+      [rental_id]
+    );
+
+    if (existingPayment.rows.length > 0) {
+      return res.status(400).json({ message: "Payment already exists for this rental" });
+    }
+
+    // FIX #4: Vérifier que la location est dans un état payable
+    if (!["confirmed", "awaiting_payment"].includes(rental.status)) {
+      return res.status(400).json({ message: "This rental cannot be paid" });
+    }
+
+    let paymentStatus = method === "card" ? "paid" : "pending";
+    let rentalStatus = method === "card" ? "confirmed" : "awaiting_payment";
+
     const paymentResult = await pool.query(
-      `INSERT INTO payments (rental_id, amount, method, status)
-       VALUES ($1, $2, $3, $4)
-       RETURNING *`,
+      `
+      INSERT INTO payments (rental_id, amount, method, status)
+      VALUES ($1, $2, $3, $4)
+      RETURNING *
+      `,
       [rental_id, rental.total_price, method, paymentStatus]
     );
 
@@ -44,6 +66,16 @@ exports.createPayment = async (req, res) => {
       `UPDATE rentals SET status = $1 WHERE id = $2`,
       [rentalStatus, rental_id]
     );
+
+    // Create facture immediately if paid via card
+    if (method === "card") {
+      await pool.query(
+        `INSERT INTO facture (user_id, rental_id, total)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (rental_id) DO NOTHING`,
+        [rental.user_id, rental_id, rental.total_price]
+      );
+    }
 
     let subject;
     let htmlTemplate;
@@ -192,6 +224,14 @@ exports.confirmCashPayment = async (req, res) => {
       [payment.rental_id]
     );
 
+    // Create facture immediately when cash payment is confirmed
+    await pool.query(
+      `INSERT INTO facture (user_id, rental_id, total)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (rental_id) DO NOTHING`,
+      [payment.user_id, payment.rental_id, payment.amount]
+    );
+
     const htmlTemplate = `
       <html>
       <body style="font-family:Arial;background:#f4f6f9;padding:40px;text-align:center;">
@@ -215,6 +255,26 @@ exports.confirmCashPayment = async (req, res) => {
 
   } catch (error) {
     console.error("CONFIRM CASH ERROR:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+/**
+ * ADMIN - Get All Payments
+ */
+exports.getAllPayments = async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT payments.*, users.email, cars.brand, cars.model
+       FROM payments
+       JOIN rentals ON rentals.id = payments.rental_id
+       JOIN users ON users.id = rentals.user_id
+       JOIN cars ON cars.id = rentals.car_id
+       ORDER BY payments.created_at DESC`
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error("GET ALL PAYMENTS ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
