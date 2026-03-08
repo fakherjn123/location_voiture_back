@@ -1,9 +1,6 @@
 const pool = require("../config/db");
 
-   
- * 🤖 RECOMMENDATION ENGINE (simple IA logique)
- * POST /api/recommendation
- */
+ 
 exports.getRecommendation = async (req, res) => {
   try {
     const {
