@@ -8,10 +8,14 @@ if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
+const crypto = require("crypto");
+
 const storage = multer.diskStorage({
   destination: uploadDir,
   filename: (req, file, cb) => {
-    cb(null, Date.now() + "-" + file.originalname);
+    const ext = path.extname(file.originalname);
+    const uniqueSuffix = crypto.randomBytes(16).toString("hex");
+    cb(null, uniqueSuffix + ext);
   }
 });
 

@@ -7,7 +7,7 @@ const passport = require("./config/passport");
 const app = express();
 
 app.use(cors({
-  origin: "http://localhost:5173",
+  origin: ["http://localhost:5173", "http://localhost:5174"],
   credentials: true,
 }));
 
@@ -29,6 +29,7 @@ app.use("/api/reviews", require("./routes/review.routes"));
 app.use("/api/availability", require("./routes/availability.routes"));
 app.use("/api/services", require("./routes/service.routes"));
 app.use("/api/hero", require("./routes/hero.routes"));
+app.use("/api/delivery", require("./routes/delivery.routes"));
 
 
 module.exports = app;

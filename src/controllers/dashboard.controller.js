@@ -3,7 +3,7 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-  
+
 exports.getStats = async (req, res) => {
   try {
     const stats = await pool.query(`
@@ -31,7 +31,7 @@ exports.getStats = async (req, res) => {
   }
 };
 
-   
+
 
 exports.getFinancialStats = async (req, res) => {
   try {
@@ -39,11 +39,18 @@ exports.getFinancialStats = async (req, res) => {
       SELECT
         (SELECT COUNT(*) FROM payments) AS total_payments,
         (SELECT COUNT(*) FROM payments WHERE status = 'paid') AS paid_payments,
-        (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE status = 'paid') AS total_revenue,
-        (SELECT COALESCE(SUM(amount), 0)
-         FROM payments
-         WHERE status = 'paid'
-         AND DATE_TRUNC('month', created_at) = DATE_TRUNC('month', CURRENT_DATE)
+        (
+          SELECT COALESCE(SUM(amount), 0)
+          FROM payments
+          WHERE status = 'paid'
+            AND (refund_status IS NULL OR refund_status != 'refunded')
+        ) AS total_revenue,
+        (
+          SELECT COALESCE(SUM(amount), 0)
+          FROM payments
+          WHERE status = 'paid'
+            AND (refund_status IS NULL OR refund_status != 'refunded')
+            AND DATE_TRUNC('month', created_at) = DATE_TRUNC('month', CURRENT_DATE)
         ) AS current_month_revenue
     `);
 
@@ -62,8 +69,8 @@ exports.getFinancialStats = async (req, res) => {
   }
 };
 
-   
- 
+
+
 exports.getTopCars = async (req, res) => {
   try {
     const topCars = await pool.query(`
@@ -84,8 +91,8 @@ exports.getTopCars = async (req, res) => {
   }
 };
 
-   
- 
+
+
 exports.getAIInsights = async (req, res) => {
   try {
     // 1. Récupération des données métiers globales
@@ -145,7 +152,7 @@ Ne fais aucune introduction ni conclusion, juste le JSON pur.`;
   }
 };
 
-   
+
 
 exports.getMonthlyHistory = async (req, res) => {
   try {

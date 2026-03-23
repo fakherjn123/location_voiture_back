@@ -6,12 +6,13 @@ const upload = require("../middlewares/upload.middleware");
 
 const optionalAuth = require("../middlewares/optionalAuth.middleware");
 
-   
+
 
 router.get("/", optionalAuth, carController.getCars);
+router.get("/archived", auth, role(["admin"]), carController.getArchivedCars);
 router.get("/:id", optionalAuth, carController.getCarById);
 
-   
+
 
 router.post(
   "/generate-description",
@@ -35,6 +36,10 @@ router.put(
   upload.single("image"),
   carController.updateCar
 );
+
+router.put("/:id/archive", auth, role(["admin"]), carController.archiveCar);
+router.put("/:id/force-archive", auth, role(["admin"]), carController.forceArchiveCar);
+router.put("/:id/unarchive", auth, role(["admin"]), carController.unarchiveCar);
 
 router.delete("/:id", auth, role(["admin"]), carController.deleteCar);
 

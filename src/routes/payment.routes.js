@@ -8,6 +8,7 @@ const paymentController = require("../controllers/payment.controller");
 router.post("/", auth, paymentController.createPayment);
 
 router.get("/", auth, role(["admin"]), paymentController.getAllPayments);
+router.get("/pending-refunds", auth, role(["admin"]), paymentController.getPendingRefunds);
 
 router.put(
   "/confirm-cash/:payment_id",
@@ -15,7 +16,12 @@ router.put(
   role(["admin"]),
   paymentController.confirmCashPayment
 );
-router.get("/test", (req, res) => {
-  res.send("PAYMENT ROUTE WORKING");
-});
+
+router.put(
+  "/refund/:payment_id",
+  auth,
+  role(["admin"]),
+  paymentController.processRefund
+);
+
 module.exports = router;

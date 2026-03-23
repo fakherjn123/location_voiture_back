@@ -44,6 +44,11 @@ exports.login = async (req, res) => {
     }
 
     const user = result.rows[0];
+
+    if (!user.password) {
+      return res.status(401).json({ message: "Ce compte utilise la connexion Google. Veuillez cliquer sur 'Continuer avec Google'." });
+    }
+
     const valid = await bcrypt.compare(password, user.password);
 
     if (!valid) {
@@ -57,7 +62,7 @@ exports.login = async (req, res) => {
         email: user.email
       },
       process.env.JWT_SECRET,
-      { expiresIn: "7d" }   
+      { expiresIn: "1d" }   
     );
 
     res.json({

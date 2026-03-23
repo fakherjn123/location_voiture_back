@@ -11,9 +11,10 @@ exports.createPayment = async (req, res) => {
 
     const rentalResult = await pool.query(
       `
-      SELECT rentals.*, users.email
+      SELECT rentals.*, users.name, users.email, users.points as user_points, cars.brand, cars.model, cars.price_per_day
       FROM rentals
       JOIN users ON users.id = rentals.user_id
+      JOIN cars ON cars.id = rentals.car_id
       WHERE rentals.id = $1
       `,
       [rental_id]
@@ -40,8 +41,8 @@ exports.createPayment = async (req, res) => {
       return res.status(400).json({ message: "Payment already exists for this rental" });
     }
 
-    // FIX #4: Vérifier que la location est dans un état payable
-    if (!["confirmed", "awaiting_payment"].includes(rental.status)) {
+    // FIX #4: Vérifier que la location est dans un état payable ("pending" ou anciennement "awaiting_payment")
+    if (!["pending", "awaiting_payment"].includes(rental.status)) {
       return res.status(400).json({ message: "This rental cannot be paid" });
     }
 
@@ -64,6 +65,26 @@ exports.createPayment = async (req, res) => {
       [rentalStatus, rental_id]
     );
 
+    // Points deduction & earning logic
+    const start = new Date(rental.start_date);
+    const end = new Date(rental.end_date);
+    const diffDays = Math.max(1, Math.ceil((end - start) / (1000 * 60 * 60 * 24)));
+    const baseTotal = diffDays * Number(rental.price_per_day);
+    
+    let newPoints = rental.user_points || 0;
+    // Si total_price < baseTotal (avec une marge pour les flottants), cela signifie que la réduction via les points a été appliquée lors de rentCar.
+    if (Number(rental.total_price) < baseTotal - 0.01) {
+      newPoints -= 100;
+    }
+    
+    const pointsEarned = Math.floor(diffDays * 10);
+    newPoints += pointsEarned;
+
+    await pool.query(
+      "UPDATE users SET points = $1 WHERE id = $2",
+      [newPoints > 0 ? newPoints : 0, rental.user_id]
+    );
+
     // Create facture immediately if paid via card
     if (method === "card") {
       await pool.query(
@@ -76,9 +97,23 @@ exports.createPayment = async (req, res) => {
 
     let subject;
     let htmlTemplate;
+    let contractPath = null;
+    const fs = require("fs");
 
     if (method === "card") {
       subject = "✅ Paiement Confirmé — BMZ Location";
+
+      // --- GENERATE PDF CONTRACT ---
+      try {
+        const { generateContract } = require("../utils/generateContractPDF");
+        contractPath = await generateContract(
+          { id: rental.id, start_date: rental.start_date, end_date: rental.end_date, total_price: rental.total_price },
+          { name: rental.name, email: rental.email },
+          { brand: rental.brand, model: rental.model }
+        );
+      } catch (err) {
+        console.error("PDF GENERATION ERROR:", err);
+      }
 
       htmlTemplate = `
       <!DOCTYPE html>
@@ -105,7 +140,7 @@ exports.createPayment = async (req, res) => {
                     <span style="color:#16a34a;font-weight:700;font-size:15px;">✓ Paiement confirmé</span>
                   </div>
                   <h2 style="color:#0a0a0a;font-size:22px;font-weight:700;margin:20px 0 6px;">Merci pour votre paiement !</h2>
-                  <p style="color:#666;font-size:14px;margin:0;">Votre réservation est maintenant <strong>confirmée</strong>. Voici votre récapitulatif :</p>
+                  <p style="color:#666;font-size:14px;margin:0;">Votre réservation est maintenant <strong>confirmée</strong>. Vous trouverez <strong>votre contrat de location en pièce jointe (PDF)</strong>. Voici votre récapitulatif :</p>
                 </td>
               </tr>
 
@@ -129,6 +164,15 @@ exports.createPayment = async (req, res) => {
                       <td style="padding:14px 20px;color:#888;font-size:13px;">📅 Date</td>
                       <td style="padding:14px 20px;color:#0a0a0a;font-weight:600;font-size:13px;text-align:right;">${new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}</td>
                     </tr>
+                    ${rental.delivery_requested ? `
+                    <tr style="border-top:1px solid #e8edf2;">
+                      <td colspan="2" style="padding:14px 20px;background:#f1f5f9;">
+                        <p style="margin:0 0 8px;font-size:13px;font-weight:700;color:#0f172a;">📦 Informations de Livraison</p>
+                        <p style="margin:4px 0;font-size:12px;color:#475569;">📍 ${rental.delivery_address}</p>
+                        <p style="margin:4px 0;font-size:12px;color:#475569;">🚗 Frais livraison: ${rental.delivery_fee} DT | 🔄 Frais récupération: ${rental.return_fee} DT</p>
+                      </td>
+                    </tr>
+                    ` : ""}
                   </table>
                 </td>
               </tr>
@@ -206,6 +250,15 @@ exports.createPayment = async (req, res) => {
                       <td style="padding:14px 20px;color:#888;font-size:13px;">💵 Mode de paiement</td>
                       <td style="padding:14px 20px;color:#0a0a0a;font-weight:600;font-size:13px;text-align:right;">Espèces (sur place)</td>
                     </tr>
+                    ${rental.delivery_requested ? `
+                    <tr style="border-top:1px solid #e8edf2;">
+                      <td colspan="2" style="padding:14px 20px;background:#f1f5f9;">
+                        <p style="margin:0 0 8px;font-size:13px;font-weight:700;color:#0f172a;">📦 Informations de Livraison</p>
+                        <p style="margin:4px 0;font-size:12px;color:#475569;">📍 ${rental.delivery_address}</p>
+                        <p style="margin:4px 0;font-size:12px;color:#475569;">🚗 Frais livraison: ${rental.delivery_fee} DT | 🔄 Frais récupération: ${rental.return_fee} DT</p>
+                      </td>
+                    </tr>
+                    ` : ""}
                   </table>
                 </td>
               </tr>
@@ -240,7 +293,12 @@ exports.createPayment = async (req, res) => {
       to: rental.email,
       subject,
       html: htmlTemplate,
+      facturePath: contractPath
     });
+
+    if (contractPath && fs.existsSync(contractPath)) {
+      fs.unlinkSync(contractPath);
+    }
 
     res.json({
       message: "Payment processed successfully",
@@ -254,16 +312,17 @@ exports.createPayment = async (req, res) => {
 };
 
 
-   
+
 exports.confirmCashPayment = async (req, res) => {
   try {
     const { payment_id } = req.params;
 
     const paymentResult = await pool.query(
-      `SELECT payments.*, rentals.user_id, users.email
+      `SELECT payments.*, rentals.start_date, rentals.end_date, rentals.user_id, rentals.delivery_requested, rentals.delivery_address, rentals.delivery_fee, rentals.return_fee, users.name, users.email, cars.brand, cars.model
        FROM payments
        JOIN rentals ON rentals.id = payments.rental_id
        JOIN users ON users.id = rentals.user_id
+       JOIN cars ON cars.id = rentals.car_id
        WHERE payments.id = $1`,
       [payment_id]
     );
@@ -333,6 +392,15 @@ exports.confirmCashPayment = async (req, res) => {
                       <td style="padding:14px 20px;color:#888;font-size:13px;">💵 Mode de paiement</td>
                       <td style="padding:14px 20px;color:#0a0a0a;font-weight:600;font-size:13px;text-align:right;">Espèces</td>
                     </tr>
+                    ${payment.delivery_requested ? `
+                    <tr style="border-top:1px solid #e8edf2;">
+                      <td colspan="2" style="padding:14px 20px;background:#f1f5f9;">
+                        <p style="margin:0 0 8px;font-size:13px;font-weight:700;color:#0f172a;">📦 Informations de Livraison</p>
+                        <p style="margin:4px 0;font-size:12px;color:#475569;">📍 ${payment.delivery_address}</p>
+                        <p style="margin:4px 0;font-size:12px;color:#475569;">🚗 Frais livraison: ${payment.delivery_fee} DT | 🔄 Frais récupération: ${payment.return_fee} DT</p>
+                      </td>
+                    </tr>
+                    ` : ""}
                   </table>
                 </td>
               </tr>
@@ -360,11 +428,29 @@ exports.confirmCashPayment = async (req, res) => {
       </html>
     `;
 
+    let contractPath = null;
+    const fs = require("fs");
+    try {
+      const { generateContract } = require("../utils/generateContractPDF");
+      contractPath = await generateContract(
+        { id: payment.rental_id, start_date: payment.start_date, end_date: payment.end_date, total_price: payment.amount },
+        { name: payment.name, email: payment.email },
+        { brand: payment.brand, model: payment.model }
+      );
+    } catch (err) {
+      console.error("PDF GENERATION ERROR:", err);
+    }
+
     await sendEmail({
       to: payment.email,
       subject: "✅ Paiement Confirmé — BMZ Location",
       html: htmlTemplate,
+      facturePath: contractPath
     });
+
+    if (contractPath && fs.existsSync(contractPath)) {
+      fs.unlinkSync(contractPath);
+    }
 
     res.json({ message: "Cash payment confirmed successfully" });
 
@@ -374,7 +460,7 @@ exports.confirmCashPayment = async (req, res) => {
   }
 };
 
-   
+
 exports.getAllPayments = async (req, res) => {
   try {
     const result = await pool.query(
@@ -388,6 +474,126 @@ exports.getAllPayments = async (req, res) => {
     res.json(result.rows);
   } catch (error) {
     console.error("GET ALL PAYMENTS ERROR:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+exports.getPendingRefunds = async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT payments.*, users.email, users.name, cars.brand, cars.model,
+              rentals.start_date, rentals.end_date
+       FROM payments
+       JOIN rentals ON rentals.id = payments.rental_id
+       JOIN users ON users.id = rentals.user_id
+       JOIN cars ON cars.id = rentals.car_id
+       WHERE payments.refund_status = 'pending'
+       ORDER BY payments.created_at DESC`
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error("GET PENDING REFUNDS ERROR:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+exports.processRefund = async (req, res) => {
+  const { payment_id } = req.params;
+  try {
+    const paymentResult = await pool.query(
+      `SELECT payments.*, users.email, users.name, cars.brand, cars.model,
+              rentals.start_date, rentals.end_date
+       FROM payments
+       JOIN rentals ON rentals.id = payments.rental_id
+       JOIN users ON users.id = rentals.user_id
+       JOIN cars ON cars.id = rentals.car_id
+       WHERE payments.id = $1`,
+      [payment_id]
+    );
+
+    if (!paymentResult.rows.length) {
+      return res.status(404).json({ message: "Payment not found" });
+    }
+
+    const p = paymentResult.rows[0];
+
+    if (p.refund_status !== 'pending') {
+      return res.status(400).json({ message: "This payment does not have a pending refund" });
+    }
+
+    await pool.query(
+      `UPDATE payments SET refund_status = 'refunded' WHERE id = $1`,
+      [payment_id]
+    );
+
+    const startDateFr = new Date(p.start_date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
+    const endDateFr = new Date(p.end_date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
+
+    const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8">
+<style>
+  body { margin:0; background:#f8fafc; font-family:'Helvetica Neue',Arial,sans-serif; }
+  .wrap { max-width:560px; margin:0 auto; padding:40px 20px; }
+  .card { background:#fff; border-radius:16px; overflow:hidden; border:1px solid #d1fae5; }
+  .header { background:linear-gradient(135deg,#064e3b,#065f46); padding:40px 32px; text-align:center; }
+  .icon { width:64px; height:64px; background:rgba(52,211,153,0.2); border-radius:50%; margin:0 auto 16px; font-size:28px; display:flex; align-items:center; justify-content:center; }
+  .title { color:#fff; font-size:22px; font-weight:800; margin:0 0 6px; }
+  .subtitle { color:#6ee7b7; font-size:14px; margin:0; }
+  .body { padding:32px; }
+  .success-box { background:#f0fdf4; border:1px solid #bbf7d0; border-radius:10px; padding:16px 20px; margin-bottom:24px; text-align:center; }
+  .amount { font-size:32px; font-weight:900; color:#16a34a; margin:0; }
+  .amount-label { color:#6b7280; font-size:13px; margin:4px 0 0; }
+  .details { background:#f8fafc; border-radius:10px; padding:16px 20px; margin-bottom:24px; border:1px solid #e2e8f0; }
+  .row { display:flex; justify-content:space-between; margin-bottom:8px; font-size:13px; }
+  .label { color:#64748b; }
+  .value { color:#0f172a; font-weight:700; }
+  .info { color:#475569; font-size:13px; line-height:1.7; margin-bottom:24px; }
+  .cta { display:block; background:#065f46; color:#fff; text-decoration:none; text-align:center; padding:14px; border-radius:10px; font-weight:700; font-size:14px; }
+  .footer { padding:20px 32px; text-align:center; border-top:1px solid #f1f5f9; color:#94a3b8; font-size:11px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div class="header">
+      <div class="icon">✅</div>
+      <div class="title">Remboursement effectué</div>
+      <div class="subtitle">BMZ Location confirme votre remboursement</div>
+    </div>
+    <div class="body">
+      <div class="success-box">
+        <div class="amount">${p.amount} TND</div>
+        <div class="amount-label">Montant remboursé</div>
+      </div>
+      <div class="details">
+        <div class="row"><span class="label">Véhicule</span><span class="value">${p.brand} ${p.model}</span></div>
+        <div class="row"><span class="label">Période</span><span class="value">${startDateFr} → ${endDateFr}</span></div>
+        <div class="row"><span class="label">Référence paiement</span><span class="value">#${String(p.id).padStart(5, '0')}</span></div>
+        <div class="row"><span class="label">Méthode</span><span class="value">${p.method === 'card' ? 'Carte bancaire' : 'Espèces'}</span></div>
+      </div>
+      <p class="info">
+        Le remboursement de <strong>${p.amount} TND</strong> a été traité par notre équipe.
+        ${p.method === 'card' ? 'Le montant sera crédité sur votre carte dans un délai de <strong>2 à 5 jours ouvrables</strong>.' : 'Vous pouvez récupérer votre remboursement en espèces directement à notre agence.'}
+      </p>
+      <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}/" class="cta">Réserver un autre véhicule →</a>
+    </div>
+    <div class="footer">BMZ Location — Merci de votre confiance.</div>
+  </div>
+</div>
+</body>
+</html>`;
+
+    await sendEmail({
+      to: p.email,
+      subject: `✅ Remboursement de ${p.amount} TND confirmé — BMZ Location`,
+      html,
+    });
+
+    res.json({ message: "Refund processed successfully" });
+  } catch (error) {
+    console.error("PROCESS REFUND ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
 };

@@ -48,7 +48,7 @@ exports.checkAvailability = async (req, res) => {
       WHERE car_id = $1
         AND status IN ('confirmed', 'ongoing')
         AND NOT (
-          end_date < $2
+          (end_date + INTERVAL '3 hours') < $2
           OR start_date > $3
         )
       `,
