@@ -1,4 +1,5 @@
 const pool = require("../config/db");
+const { sendEmail } = require("../services/email.service");
 
 const AGENCY_LAT = 35.8353; // Sousse Sahloul
 const AGENCY_LNG = 10.5944;
@@ -130,6 +131,60 @@ exports.updateDeliveryStatus = async (req, res) => {
 
     if (updated.rows.length === 0) {
       return res.status(404).json({ message: "Location introuvable" });
+    }
+
+    try {
+      const detailsQuery = await pool.query(
+        `SELECT rentals.*, users.email, users.name, cars.brand, cars.model 
+         FROM rentals 
+         JOIN users ON rentals.user_id = users.id 
+         JOIN cars ON rentals.car_id = cars.id 
+         WHERE rentals.id = $1`, [rental_id]
+      );
+
+      if (detailsQuery.rows.length > 0) {
+        const details = detailsQuery.rows[0];
+        
+        let emailSubject = "";
+        let emailHtml = "";
+
+        if (status === 'en_route') {
+          emailSubject = "🚚 Votre véhicule est en route !";
+          emailHtml = `
+            <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
+              <h2 style="color: #4F46E5;">Bonjour ${details.name},</h2>
+              <p>Le chauffeur est actuellement en route pour vous livrer votre <strong>${details.brand} ${details.model}</strong>.</p>
+              <p>Adresse de livraison : <strong>${details.delivery_address}</strong></p>
+              ${details.delivery_time ? `<p>Heure souhaitée : <strong>${details.delivery_time}</strong></p>` : ''}
+              <p>Préparez-vous à le réceptionner, il arrive bientôt !</p>
+              <br/>
+              <p>L'équipe BMZ Location</p>
+            </div>
+          `;
+        } else if (status === 'delivered') {
+          emailSubject = "✅ Votre véhicule vous a été livré";
+          emailHtml = `
+            <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
+              <h2 style="color: #10B981;">Bonjour ${details.name},</h2>
+              <p>Votre véhicule <strong>${details.brand} ${details.model}</strong> vous a bien été livré.</p>
+              <p>Vous pouvez dès à présent en profiter pour toute la durée de votre location.</p>
+              <p>Nous vous souhaitons une excellente route !</p>
+              <br/>
+              <p>L'équipe BMZ Location</p>
+            </div>
+          `;
+        }
+
+        if (emailSubject) {
+          sendEmail({
+            to: details.email,
+            subject: emailSubject,
+            html: emailHtml
+          });
+        }
+      }
+    } catch (emailErr) {
+      console.error("Erreur lors de l'envoi de l'email de livraison:", emailErr);
     }
 
     res.json({ message: "Statut de livraison mis à jour", rental: updated.rows[0] });

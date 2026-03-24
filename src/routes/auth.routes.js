@@ -29,7 +29,8 @@ router.get(
       { expiresIn: "7d" }
     );
 
-    res.redirect(`http://localhost:5173/oauth-success?token=${token}`);
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5174";
+    res.redirect(`${frontendUrl}/oauth-success?token=${token}`);
   }
 );
 

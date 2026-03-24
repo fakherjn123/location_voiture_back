@@ -39,7 +39,7 @@ exports.rentCar = async (req, res) => {
   try {
     const { 
       car_id, start_date, end_date, 
-      delivery_requested, delivery_address, delivery_lat, delivery_lng 
+      delivery_requested, delivery_address, delivery_lat, delivery_lng, delivery_time 
     } = req.body;
     const user_id = req.user.id;
 
@@ -164,6 +164,9 @@ exports.rentCar = async (req, res) => {
       if (!actualDestLat && !actualDestLng && !delivery_address) {
         return res.status(400).json({ message: "Veuillez fournir des coordonnées (lat/lng) ou une adresse pour la livraison" });
       }
+      if (!delivery_time) {
+        return res.status(400).json({ message: "Veuillez préciser l'heure de livraison souhaitée" });
+      }
 
       const destination = (actualDestLat && actualDestLng) 
         ? `${actualDestLat},${actualDestLng}` 
@@ -213,9 +216,9 @@ exports.rentCar = async (req, res) => {
       `INSERT INTO rentals (
          user_id, car_id, start_date, end_date, total_price, status,
          delivery_requested, delivery_address, delivery_lat, delivery_lng,
-         delivery_distance_km, delivery_fee, return_fee, delivery_status, return_status
+         delivery_distance_km, delivery_fee, return_fee, delivery_status, return_status, delivery_time
        )
-       VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8, $9, $10, $11, $12, $13, $14)
+       VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
        RETURNING *`,
       [
         user_id, car_id, start_date, end_date, finalTotal,
@@ -227,7 +230,8 @@ exports.rentCar = async (req, res) => {
         delivery_requested ? delivery_fee : 0,
         delivery_requested ? return_fee : 0,
         delivery_requested ? 'pending' : null,
-        delivery_requested ? 'pending' : null
+        delivery_requested ? 'pending' : null,
+        delivery_requested ? delivery_time : null
       ]
     );
 
@@ -518,6 +522,27 @@ exports.getCarBookedDates = async (req, res) => {
     res.json(dates);
   } catch (error) {
     console.error("GET BOOKED DATES ERROR:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+exports.getRentalsByCar = async (req, res) => {
+  try {
+    const { car_id } = req.params;
+    const rentals = await pool.query(
+      `
+      SELECT rentals.*, users.name as user_name, users.email as user_email
+      FROM rentals
+      JOIN users ON users.id = rentals.user_id
+      WHERE rentals.car_id = $1
+      ORDER BY rentals.start_date DESC
+      `,
+      [car_id]
+    );
+
+    res.json(rentals.rows);
+  } catch (error) {
+    console.error("GET RENTALS BY CAR ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
