@@ -1,5 +1,5 @@
 const pool = require("../config/db");
-const { generateFacture } = require("../utils/generateFacturePDF");
+const { generateContract } = require("../utils/generateContractPDF");
 const fs = require("fs");
 
 
@@ -12,7 +12,7 @@ exports.downloadFacturePDF = async (req, res) => {
 
     if (req.user.role === "admin") {
       query = `
-        SELECT f.*, u.email, r.start_date, r.end_date, c.brand, c.model
+        SELECT f.*, u.email, u.name, r.start_date, r.end_date, c.brand, c.model
         FROM facture f
         JOIN users u ON u.id = f.user_id
         JOIN rentals r ON r.id = f.rental_id
@@ -22,7 +22,7 @@ exports.downloadFacturePDF = async (req, res) => {
       values = [id];
     } else {
       query = `
-        SELECT f.*, u.email, r.start_date, r.end_date, c.brand, c.model
+        SELECT f.*, u.email, u.name, r.start_date, r.end_date, c.brand, c.model
         FROM facture f
         JOIN users u ON u.id = f.user_id
         JOIN rentals r ON r.id = f.rental_id
@@ -40,31 +40,14 @@ exports.downloadFacturePDF = async (req, res) => {
 
     const facture = result.rows[0];
 
-    const payment = {
-      id: facture.id,
-      amount: facture.total,
-      method: "card"
-    };
+    // Use the same generateContract as email so admin and client get identical PDF
+    const filePath = await generateContract(
+      { id: facture.rental_id, start_date: facture.start_date, end_date: facture.end_date, total_price: facture.total },
+      { name: facture.name || facture.email, email: facture.email },
+      { brand: facture.brand, model: facture.model }
+    );
 
-    const rental = {
-      id: facture.rental_id,
-      start_date: facture.start_date,
-      end_date: facture.end_date
-    };
-
-    const user = {
-      email: facture.email
-    };
-
-    const car = {
-      brand: facture.brand,
-      model: facture.model
-    };
-
-    // 🔥 IMPORTANT FIX
-    const filePath = await generateFacture(payment, rental, user, car);
-
-    res.download(filePath, `facture-${facture.id}.pdf`, (err) => {
+    res.download(filePath, `contrat-${facture.rental_id}.pdf`, (err) => {
       if (!err && fs.existsSync(filePath)) {
         fs.unlinkSync(filePath); // delete after download
       }
@@ -75,6 +58,7 @@ exports.downloadFacturePDF = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+
    
 exports.getMyFacture = async (req, res) => {
   try {

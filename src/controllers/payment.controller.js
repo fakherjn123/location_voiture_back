@@ -2,14 +2,17 @@ const pool = require("../config/db");
 const { sendEmail } = require("../services/email.service");
 
 exports.createPayment = async (req, res) => {
+  const client = await pool.connect();
   try {
+    await client.query('BEGIN');
     const { rental_id, method } = req.body;
 
     if (!rental_id || !method) {
+      await client.query('ROLLBACK');
       return res.status(400).json({ message: "Missing fields" });
     }
 
-    const rentalResult = await pool.query(
+    const rentalResult = await client.query(
       `
       SELECT rentals.*, users.name, users.email, users.points as user_points, cars.brand, cars.model, cars.price_per_day
       FROM rentals
@@ -21,6 +24,7 @@ exports.createPayment = async (req, res) => {
     );
 
     if (rentalResult.rows.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ message: "Rental not found" });
     }
 
@@ -28,28 +32,31 @@ exports.createPayment = async (req, res) => {
 
     // 🔒 Vérifier propriétaire
     if (rental.user_id !== req.user.id) {
+      await client.query('ROLLBACK');
       return res.status(403).json({ message: "Unauthorized rental" });
     }
 
     // FIX #4: Empêcher le double paiement
-    const existingPayment = await pool.query(
+    const existingPayment = await client.query(
       `SELECT 1 FROM payments WHERE rental_id = $1`,
       [rental_id]
     );
 
     if (existingPayment.rows.length > 0) {
+      await client.query('ROLLBACK');
       return res.status(400).json({ message: "Payment already exists for this rental" });
     }
 
     // FIX #4: Vérifier que la location est dans un état payable ("pending" ou anciennement "awaiting_payment")
     if (!["pending", "awaiting_payment"].includes(rental.status)) {
+      await client.query('ROLLBACK');
       return res.status(400).json({ message: "This rental cannot be paid" });
     }
 
     let paymentStatus = method === "card" ? "paid" : "pending";
     let rentalStatus = method === "card" ? "confirmed" : "awaiting_payment";
 
-    const paymentResult = await pool.query(
+    const paymentResult = await client.query(
       `
       INSERT INTO payments (rental_id, amount, method, status)
       VALUES ($1, $2, $3, $4)
@@ -60,7 +67,7 @@ exports.createPayment = async (req, res) => {
 
     const payment = paymentResult.rows[0];
 
-    await pool.query(
+    await client.query(
       `UPDATE rentals SET status = $1 WHERE id = $2`,
       [rentalStatus, rental_id]
     );
@@ -72,22 +79,25 @@ exports.createPayment = async (req, res) => {
     const baseTotal = diffDays * Number(rental.price_per_day);
     
     let newPoints = rental.user_points || 0;
-    // Si total_price < baseTotal (avec une marge pour les flottants), cela signifie que la réduction via les points a été appliquée lors de rentCar.
+    // Si prix réduit, on déduit les 100 points
     if (Number(rental.total_price) < baseTotal - 0.01) {
       newPoints -= 100;
     }
     
-    const pointsEarned = Math.floor(diffDays * 10);
-    newPoints += pointsEarned;
+    // On n'ajoute les points gagnés QUE si le paiement est de suite confirmé (Carte)
+    if (method === "card") {
+      const pointsEarned = Math.floor(diffDays * 10);
+      newPoints += pointsEarned;
+    }
 
-    await pool.query(
+    await client.query(
       "UPDATE users SET points = $1 WHERE id = $2",
-      [newPoints > 0 ? newPoints : 0, rental.user_id]
+      [Math.max(0, newPoints), rental.user_id]
     );
 
     // Create facture immediately if paid via card
     if (method === "card") {
-      await pool.query(
+      await client.query(
         `INSERT INTO facture (user_id, rental_id, total)
          VALUES ($1, $2, $3)
          ON CONFLICT (rental_id) DO NOTHING`,
@@ -227,10 +237,10 @@ exports.createPayment = async (req, res) => {
               <tr>
                 <td style="padding:36px 40px 0;text-align:center;">
                   <div style="display:inline-block;background:#fff7ed;border-radius:50px;padding:10px 24px;">
-                    <span style="color:#d97706;font-weight:700;font-size:15px;">⏳ Paiement en attente</span>
+                    <span style="color:#d97706;font-weight:700;font-size:15px;">⏳ Demande transmise</span>
                   </div>
-                  <h2 style="color:#0a0a0a;font-size:22px;font-weight:700;margin:20px 0 6px;">Votre réservation est enregistrée !</h2>
-                  <p style="color:#666;font-size:14px;margin:0;">Le paiement sera effectué <strong>sur place</strong> lors de la prise en charge du véhicule.</p>
+                  <h2 style="color:#0a0a0a;font-size:22px;font-weight:700;margin:20px 0 6px;">Votre demande est en cours de validation !</h2>
+                  <p style="color:#666;font-size:14px;margin:0;">Votre demande de location a été envoyée à l'agence. <strong>Elle est en attente de validation</strong> selon les disponibilités. Vous recevrez très bientôt un email de confirmation définitive.</p>
                 </td>
               </tr>
 
@@ -289,6 +299,21 @@ exports.createPayment = async (req, res) => {
       `;
     }
 
+    await client.query('COMMIT');
+
+    // 🔔 Notify admin in real-time
+    const io = req.app ? req.app.get('io') : null;
+    if (io) {
+      const methodLabel = method === 'card' ? '💳 Carte bancaire' : '💵 Espèces';
+      io.to('admin-room').emit('new_notification', {
+        type: 'new_payment',
+        title: '💰 Nouveau Paiement',
+        message: `${rental.name} a payé ${rental.total_price} TND pour ${rental.brand} ${rental.model} (${methodLabel}).`,
+        timestamp: new Date()
+      });
+    }
+
+    // Emails are sent after commit
     await sendEmail({
       to: rental.email,
       subject,
@@ -306,49 +331,92 @@ exports.createPayment = async (req, res) => {
     });
 
   } catch (error) {
+    if (client) await client.query('ROLLBACK');
     console.error("PAYMENT ERROR:", error);
     res.status(500).json({ message: "Server error" });
+  } finally {
+    if (client) client.release();
   }
 };
 
 
 
 exports.confirmCashPayment = async (req, res) => {
+  const client = await pool.connect();
   try {
+    await client.query('BEGIN');
     const { payment_id } = req.params;
 
-    const paymentResult = await pool.query(
+    const paymentResult = await client.query(
       `SELECT payments.*, rentals.start_date, rentals.end_date, rentals.user_id, rentals.delivery_requested, rentals.delivery_address, rentals.delivery_fee, rentals.return_fee, users.name, users.email, cars.brand, cars.model
        FROM payments
        JOIN rentals ON rentals.id = payments.rental_id
        JOIN users ON users.id = rentals.user_id
        JOIN cars ON cars.id = rentals.car_id
        WHERE payments.id = $1`,
-      [payment_id]
+       [payment_id]
     );
 
     if (paymentResult.rows.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ message: "Payment not found" });
     }
 
     const payment = paymentResult.rows[0];
 
-    await pool.query(
+    // Vérifier si la voiture est disponible (n'a pas été louée entre-temps)
+    const conflict = await client.query(
+      `SELECT 1 FROM rentals
+       WHERE car_id = $1 AND status IN ('confirmed', 'ongoing')
+         AND $2 < (end_date + INTERVAL '3 hours')
+         AND $3 > start_date`,
+      [payment.car_id, payment.start_date, payment.end_date]
+    );
+
+    if (conflict.rows.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ 
+        message: "Action refusée : Ce véhicule a déjà été loué et confirmé pour ces dates par un autre client."
+      });
+    }
+
+    await client.query(
       `UPDATE payments SET status = 'paid' WHERE id = $1`,
       [payment_id]
     );
 
-    await pool.query(
+    await client.query(
       `UPDATE rentals SET status = 'confirmed' WHERE id = $1`,
       [payment.rental_id]
     );
 
-    await pool.query(
+    await client.query(
       `INSERT INTO facture (user_id, rental_id, total)
        VALUES ($1, $2, $3)
        ON CONFLICT (rental_id) DO NOTHING`,
       [payment.user_id, payment.rental_id, payment.amount]
     );
+
+    // Ajouter les points gagnés au client car le paiement est validé !
+    const start = new Date(payment.start_date);
+    const end = new Date(payment.end_date);
+    const diffDays = Math.max(1, Math.ceil((end - start) / (1000 * 60 * 60 * 24)));
+    const pointsEarned = Math.floor(diffDays * 10);
+    
+    await client.query("UPDATE users SET points = points + $1 WHERE id = $2", [pointsEarned, payment.user_id]);
+
+    await client.query('COMMIT');
+
+    // 🔔 Notify admin in real-time
+    const io = req.app ? req.app.get('io') : null;
+    if (io) {
+      io.to('admin-room').emit('new_notification', {
+        type: 'cash_confirmed',
+        title: '✅ Paiement Cash Confirmé',
+        message: `Paiement espèces validé pour ${payment.name} (${payment.amount} TND - ${payment.brand} ${payment.model}).`,
+        timestamp: new Date()
+      });
+    }
 
     const htmlTemplate = `
       <!DOCTYPE html>
@@ -455,10 +523,85 @@ exports.confirmCashPayment = async (req, res) => {
     res.json({ message: "Cash payment confirmed successfully" });
 
   } catch (error) {
+    if (client) await client.query('ROLLBACK');
     console.error("CONFIRM CASH ERROR:", error);
     res.status(500).json({ message: "Server error" });
+  } finally {
+    if (client) client.release();
   }
 };
+
+exports.rejectCashPayment = async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { payment_id } = req.params;
+
+    const paymentResult = await client.query(
+      `SELECT payments.*, rentals.start_date, rentals.end_date, users.name, users.email, cars.brand, cars.model, cars.price_per_day
+       FROM payments
+       JOIN rentals ON rentals.id = payments.rental_id
+       JOIN users ON users.id = rentals.user_id
+       JOIN cars ON cars.id = rentals.car_id
+       WHERE payments.id = $1`,
+       [payment_id]
+    );
+
+    if (paymentResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: "Payment not found" });
+    }
+
+    const payment = paymentResult.rows[0];
+
+    if (payment.status !== 'pending') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ message: "Only pending cash payments can be rejected" });
+    }
+
+    // Refuser le paiement et la réservation
+    await client.query(`UPDATE payments SET status = 'cancelled' WHERE id = $1`, [payment_id]);
+    await client.query(`UPDATE rentals SET status = 'cancelled' WHERE id = $1`, [payment.rental_id]);
+
+    // Vérifier si le client a utilisé 100 points pour réduire le prix, si oui on les lui recrédite
+    const start = new Date(payment.start_date);
+    const end = new Date(payment.end_date);
+    const diffDays = Math.max(1, Math.ceil((end - start) / (1000 * 60 * 60 * 24)));
+    const baseTotal = diffDays * Number(payment.price_per_day);
+    if (Number(payment.amount) < baseTotal - 0.01) {
+      await client.query("UPDATE users SET points = points + 100 WHERE id = $1", [payment.user_id]);
+    }
+
+    await client.query('COMMIT');
+
+    const htmlTemplate = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+        <h2 style="color: #e11d48; border-bottom: 2px solid #e11d48; padding-bottom: 10px;">Réservation Refusée</h2>
+        <p>Bonjour ${payment.name || 'Client'},</p>
+        <p>Nous sommes au regret de vous informer que votre réservation avec paiement en espèces pour le véhicule <strong>${payment.brand} ${payment.model}</strong> a été refusée par l'agence.</p>
+        <p>Ce véhicule n'est malheureusement plus disponible pour ces dates.</p>
+        <p>N'hésitez pas à consulter notre site pour trouver un autre véhicule correspondant à vos besoins.</p>
+        <p>L'équipe BMZ Location</p>
+      </div>
+    `;
+
+    await sendEmail({
+      to: payment.email,
+      subject: "❌ Réservation Refusée — BMZ Location",
+      html: htmlTemplate
+    });
+
+    res.json({ message: "Cash payment rejected successfully" });
+
+  } catch (error) {
+    if (client) await client.query('ROLLBACK');
+    console.error("REJECT CASH ERROR:", error);
+    res.status(500).json({ message: "Server error" });
+  } finally {
+    if (client) client.release();
+  }
+};
+
 
 
 exports.getAllPayments = async (req, res) => {
@@ -499,8 +642,10 @@ exports.getPendingRefunds = async (req, res) => {
 
 exports.processRefund = async (req, res) => {
   const { payment_id } = req.params;
+  const client = await pool.connect();
   try {
-    const paymentResult = await pool.query(
+    await client.query('BEGIN');
+    const paymentResult = await client.query(
       `SELECT payments.*, users.email, users.name, cars.brand, cars.model,
               rentals.start_date, rentals.end_date
        FROM payments
@@ -512,19 +657,23 @@ exports.processRefund = async (req, res) => {
     );
 
     if (!paymentResult.rows.length) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ message: "Payment not found" });
     }
 
     const p = paymentResult.rows[0];
 
     if (p.refund_status !== 'pending') {
+      await client.query('ROLLBACK');
       return res.status(400).json({ message: "This payment does not have a pending refund" });
     }
 
-    await pool.query(
+    await client.query(
       `UPDATE payments SET refund_status = 'refunded' WHERE id = $1`,
       [payment_id]
     );
+
+    await client.query('COMMIT');
 
     const startDateFr = new Date(p.start_date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
     const endDateFr = new Date(p.end_date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
@@ -593,7 +742,80 @@ exports.processRefund = async (req, res) => {
 
     res.json({ message: "Refund processed successfully" });
   } catch (error) {
+    if (client) await client.query('ROLLBACK');
     console.error("PROCESS REFUND ERROR:", error);
     res.status(500).json({ message: "Server error" });
+  } finally {
+    if (client) client.release();
   }
 };
+
+// --- BACKGROUND JOB ---
+// Annuler automatiquement les paiements "cash" en attente depuis plus de 24 heures.
+setInterval(async () => {
+  try {
+    // Sélectionner les paiements 'pending' créés il y a plus de 24 heures
+    const result = await pool.query(
+      `SELECT payments.id, payments.rental_id, users.email, users.name, cars.brand, cars.model, cars.price_per_day, rentals.start_date, rentals.end_date, payments.amount, payments.user_id
+       FROM payments
+       JOIN rentals ON rentals.id = payments.rental_id
+       JOIN users ON users.id = rentals.user_id
+       JOIN cars ON cars.id = rentals.car_id
+       WHERE payments.status = 'pending'
+       AND payments.created_at < NOW() - INTERVAL '24 hours'`
+    );
+
+    if (result.rows.length === 0) return;
+
+    console.log("[CRON] Expiring " + result.rows.length + " pending cash payments...");
+
+    const { sendEmail } = require("../services/email.service");
+
+    for (const payment of result.rows) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        
+        // Annuler
+        await client.query("UPDATE payments SET status = 'cancelled' WHERE id = $1", [payment.id]);
+        await client.query("UPDATE rentals SET status = 'cancelled' WHERE id = $1", [payment.rental_id]);
+
+        // Rembourser les points si utilisés
+        const start = new Date(payment.start_date);
+        const end = new Date(payment.end_date);
+        const diffDays = Math.max(1, Math.ceil((end - start) / (1000 * 60 * 60 * 24)));
+        const baseTotal = diffDays * Number(payment.price_per_day);
+        if (Number(payment.amount) < baseTotal - 0.01) {
+          await client.query("UPDATE users SET points = points + 100 WHERE id = $1", [payment.user_id]);
+        }
+
+        await client.query('COMMIT');
+
+        // Envoyer email au client
+        const htmlTemplate = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+            <h2 style="color: #e11d48; border-bottom: 2px solid #e11d48; padding-bottom: 10px;">Demande de Réservation Expirée</h2>
+            <p>Bonjour ${payment.name || 'Client'},</p>
+            <p>Votre demande de location pour le véhicule <strong>${payment.brand} ${payment.model}</strong> a expiré car elle est restée en attente de validation depuis plus de 24 heures sans suite de notre agence, ou parce que vous n'êtes pas venu la récupérer.</p>
+            <p>La réservation a donc été automatiquement annulée.</p>
+            <p>L'équipe BMZ Location</p>
+          </div>
+        `;
+        
+        await sendEmail({
+          to: payment.email,
+          subject: "❌ Demande de Réservation Expirée — BMZ Location",
+          html: htmlTemplate
+        }).catch(err => console.error("Email cron error:", err));
+
+      } catch (e) {
+        await client.query('ROLLBACK');
+        console.error("[CRON] Erreur lors de l'expiration du paiement " + payment.id, e);
+      } finally {
+        client.release();
+      }
+    }
+  } catch (error) {
+    console.error("[CRON] Fatal error:", error);
+  }
+}, 1000 * 60 * 60); // Check every 60 minutes

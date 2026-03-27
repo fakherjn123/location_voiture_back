@@ -113,7 +113,7 @@ exports.rentCar = async (req, res) => {
     const conflict = await pool.query(
       `SELECT start_date, end_date FROM rentals
        WHERE car_id = $1
-         AND status NOT IN ('cancelled', 'completed')
+         AND status IN ('confirmed', 'ongoing')
          AND $2 < (end_date + INTERVAL '3 hours')
          AND $3 > start_date`,
       [car_id, start_date, end_date]
@@ -510,7 +510,7 @@ exports.getCarBookedDates = async (req, res) => {
     const { car_id } = req.params;
     const result = await pool.query(
       `SELECT start_date, (end_date + INTERVAL '3 hours') AS end_date FROM rentals 
-       WHERE car_id = $1 AND status NOT IN ('cancelled', 'completed')`,
+       WHERE car_id = $1 AND status IN ('confirmed', 'ongoing')`,
       [car_id]
     );
 
