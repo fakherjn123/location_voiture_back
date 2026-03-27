@@ -18,6 +18,13 @@ router.put(
 );
 
 router.put(
+  "/reject-cash/:payment_id",
+  auth,
+  role(["admin"]),
+  paymentController.rejectCashPayment
+);
+
+router.put(
   "/refund/:payment_id",
   auth,
   role(["admin"]),
