@@ -1,4 +1,8 @@
 const pool = require("../config/db");
+const { triggerN8n } = require("../services/n8n.service");
+const notificationController = require("./notification.controller");
+// Note: using native fetch (Node.js 18+)
+
 
 const updateRentalStatuses = async () => {
   // Annulation automatique (No-Show) après 1 jour
@@ -29,6 +33,31 @@ const updateRentalStatuses = async () => {
          ON CONFLICT (rental_id) DO NOTHING`,
         [rental.user_id, rental.id, rental.total_price]
       );
+
+      // IDEA 3: Review Relance n8n hook
+      try {
+        const userInfo = await pool.query(
+          `SELECT u.email, u.name, c.brand, c.model
+           FROM users u, cars c
+           WHERE u.id = $1 AND c.id = $2`,
+          [rental.user_id, rental.car_id]
+        );
+        const info = userInfo.rows[0] || {};
+        triggerN8n(process.env.N8N_WEBHOOK_REVIEW_RELANCE, {
+          event: "rental_completed",
+          rental_id: rental.id,
+          user_id: rental.user_id,
+          car_id: rental.car_id,
+          total_price: rental.total_price,
+          end_date: rental.end_date,
+          clientEmail: info.email,
+          clientName: info.name,
+          carBrand: info.brand,
+          carModel: info.model
+        });
+      } catch (n8nErr) {
+        console.error("n8n review hook error:", n8nErr);
+      }
     }
   }
 };
@@ -37,9 +66,10 @@ const updateRentalStatuses = async () => {
 
 exports.rentCar = async (req, res) => {
   try {
-    const { 
-      car_id, start_date, end_date, 
-      delivery_requested, delivery_address, delivery_lat, delivery_lng, delivery_time 
+    const {
+      car_id, start_date, end_date,
+      delivery_requested, delivery_address, delivery_lat, delivery_lng, delivery_time,
+      promo_code
     } = req.body;
     const user_id = req.user.id;
 
@@ -136,21 +166,44 @@ exports.rentCar = async (req, res) => {
 
     const baseTotal = diffDays * Number(car.price_per_day);
 
-    // Check if user has points to get discount (just for calculating final total)
-    // Points deduction will happen during payment
-    const userResult = await pool.query(
-      "SELECT points FROM users WHERE id = $1",
-      [user_id]
-    );
-
-    let userPoints = userResult.rows[0]?.points || 0;
     let discount = 0;
+    let appliedPromo = null;
 
-    if (userPoints >= 100) {
-      discount = baseTotal * 0.1;
+    // Si on a un code promo, il écrase la fidélité
+    if (promo_code) {
+      const checkPromo = await pool.query(
+        "SELECT * FROM promo_codes WHERE code = $1 AND is_active = true",
+        [promo_code.toUpperCase()]
+      );
+
+      if (checkPromo.rows.length > 0) {
+        const promo = checkPromo.rows[0];
+        const isValidDate = !promo.expiration_date || new Date(promo.expiration_date) > new Date();
+        const isValidLimit = !promo.usage_limit || promo.used_count < promo.usage_limit;
+
+        if (isValidDate && isValidLimit) {
+          appliedPromo = promo;
+          if (promo.discount_type === 'percentage') {
+            discount = baseTotal * (Number(promo.discount_value) / 100);
+          } else {
+            discount = Number(promo.discount_value);
+          }
+        }
+      }
+    }
+
+    // SI AUCUN CODE PROMO N'A MARCHE, vérifier la fidélité
+    if (!appliedPromo) {
+      const userResult = await pool.query("SELECT points FROM users WHERE id = $1", [user_id]);
+      let userPoints = userResult.rows[0]?.points || 0;
+      if (userPoints >= 100) {
+        discount = baseTotal * 0.1;
+      }
     }
 
     let finalTotal = baseTotal - discount;
+    if (finalTotal < 0) finalTotal = 0; // ne jamais être négatif
+
     const pointsEarned = Math.floor(diffDays * 10);
 
     // --- LOGIQUE DE LIVRAISON ---
@@ -168,8 +221,8 @@ exports.rentCar = async (req, res) => {
         return res.status(400).json({ message: "Veuillez préciser l'heure de livraison souhaitée" });
       }
 
-      const destination = (actualDestLat && actualDestLng) 
-        ? `${actualDestLat},${actualDestLng}` 
+      const destination = (actualDestLat && actualDestLng)
+        ? `${actualDestLat},${actualDestLng}`
         : encodeURIComponent(delivery_address);
 
       const AGENCY_LAT = 35.8353; // Sousse Sahloul
@@ -180,7 +233,7 @@ exports.rentCar = async (req, res) => {
       try {
         const response = await fetch(googleUrl);
         const data = await response.json();
-        
+
         if (data.status === "OK" && data.rows && data.rows[0].elements && data.rows[0].elements[0].status === "OK") {
           delivery_distance_km = data.rows[0].elements[0].distance.value / 1000;
         } else {
@@ -201,7 +254,7 @@ exports.rentCar = async (req, res) => {
         }
       }
       if (delivery_distance_km > 100) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           message: `Désolé, nous ne livrons pas au-delà de 100 km de notre agence. (Distance calculée: ${delivery_distance_km.toFixed(1)} km)`
         });
       }
@@ -216,9 +269,10 @@ exports.rentCar = async (req, res) => {
       `INSERT INTO rentals (
          user_id, car_id, start_date, end_date, total_price, status,
          delivery_requested, delivery_address, delivery_lat, delivery_lng,
-         delivery_distance_km, delivery_fee, return_fee, delivery_status, return_status, delivery_time
+         delivery_distance_km, delivery_fee, return_fee, delivery_status, return_status, delivery_time,
+         promo_code, discount_amount
        )
-       VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+       VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
        RETURNING *`,
       [
         user_id, car_id, start_date, end_date, finalTotal,
@@ -231,22 +285,72 @@ exports.rentCar = async (req, res) => {
         delivery_requested ? return_fee : 0,
         delivery_requested ? 'pending' : null,
         delivery_requested ? 'pending' : null,
-        delivery_requested ? delivery_time : null
+        delivery_requested ? delivery_time : null,
+        appliedPromo ? appliedPromo.code : null,
+        discount
       ]
     );
+
+    // Increment promo code used_count
+    if (appliedPromo) {
+      await pool.query("UPDATE promo_codes SET used_count = used_count + 1 WHERE id = $1", [appliedPromo.id]);
+    }
 
     const newRental = rental.rows[0];
 
     // ------------------------------------------
 
+    // ------------------------------------------
+    // Real-time & DB Notifications
     const io = req.app.get("io");
+    
+    // 1. Pour l'Admin
+    const adminNotif = await notificationController.createNotification(
+      null, // null ou ID admin si existant
+      "Nouvelle Réservation",
+      `Une nouvelle réservation (#${newRental.id}) a été reçue pour la ${car.brand} ${car.model}.`,
+      "new_rental"
+    );
     if (io) {
-      io.to("admin-room").emit("new_notification", {
+      io.to("admin-room").emit("new_notification", adminNotif || {
         type: "new_rental",
         title: "Nouvelle Réservation",
         message: `Une nouvelle réservation a été créée pour la ${car.brand} ${car.model}.`,
         timestamp: new Date()
       });
+    }
+
+    // 2. Pour le Client
+    const userNotif = await notificationController.createNotification(
+      user_id,
+      "Réservation Initiée",
+      `Votre réservation pour la ${car.brand} ${car.model} est enregistrée. Veuillez procéder au paiement pour la confirmer.`,
+      "info"
+    );
+    if (io) {
+      io.to(`user-${user_id}`).emit("new_notification", userNotif);
+    }
+
+    // IDEA 1: New Rental Alert n8n hook
+    try {
+      const clientInfo = await pool.query(
+        "SELECT name, email FROM users WHERE id = $1",
+        [user_id]
+      );
+      const client = clientInfo.rows[0] || {};
+      triggerN8n(process.env.N8N_WEBHOOK_NEW_RENTAL, {
+        event: "new_rental",
+        rental_id: newRental.id,
+        clientEmail: client.email,
+        clientName: client.name,
+        carBrand: car.brand,
+        carModel: car.model,
+        start_date: newRental.start_date,
+        end_date: newRental.end_date,
+        total: finalTotal
+      });
+    } catch (n8nErr) {
+      console.error("n8n new rental hook error:", n8nErr);
     }
 
     res.status(201).json({
@@ -300,9 +404,10 @@ exports.cancelRental = async (req, res) => {
 
     const preCheck = await pool.query(
       `
-      SELECT rentals.*, cars.brand, cars.model
+      SELECT rentals.*, users.email, users.name as user_name, cars.brand, cars.model
       FROM rentals
       JOIN cars ON cars.id = rentals.car_id
+      JOIN users ON users.id = rentals.user_id
       WHERE rentals.id = $1 AND rentals.user_id = $2
       `,
       [id, user_id]
@@ -362,10 +467,10 @@ exports.cancelRental = async (req, res) => {
           <h2 style="color: #e11d48; border-bottom: 2px solid #e11d48; padding-bottom: 10px;">Annulation Confirmée</h2>
           <p>Bonjour ${rental.user_name || 'Client'},</p>
           <p>Vous avez annulé avec succès votre réservation pour la <strong>${rental.brand} ${rental.model}</strong>.</p>
-          ${requiresRefund ? 
-            `<p>Comme un paiement a été effectué, <strong>un remboursement est actuellement en attente</strong>. Vous serez notifié dès qu'il sera traité.</p>` : 
-            `<p>Aucun paiement n'ayant été débité, aucune procédure de remboursement n'est requise.</p>`
-          }
+          ${requiresRefund ?
+          `<p>Comme un paiement a été effectué, <strong>un remboursement est actuellement en attente</strong>. Vous serez notifié dès qu'il sera traité.</p>` :
+          `<p>Aucun paiement n'ayant été débité, aucune procédure de remboursement n'est requise.</p>`
+        }
           <p>Nous espérons vous revoir bientôt chez BMZ Location.</p>
         </div>
       `
@@ -455,18 +560,29 @@ exports.adminCancelRental = async (req, res) => {
 
       try {
         const { sendEmail } = require("../services/email.service");
-        await sendEmail(
-          rental.email,
-          "Avis d'annulation et Remboursement - BMZ Location",
-          `Votre réservation pour la ${rental.brand} ${rental.model} a été annulée. Un remboursement de ${rental.total_price} DT sera effectué prochainement.`,
-          emailHtml
-        );
+        await sendEmail({
+          to: rental.email,
+          subject: "Avis d'annulation et Remboursement - BMZ Location",
+          html: emailHtml
+        });
       } catch (err) {
         console.error("Failed to send cancellation email:", err);
       }
     }
 
-    res.json({ 
+    // Real-time Notification for User
+    const io = req.app.get("io");
+    const userNotif = await notificationController.createNotification(
+      rental.user_id,
+      "Réservation Annulée",
+      `Votre réservation #${id} pour la ${rental.brand} ${rental.model} a été annulée par l'administrateur.`,
+      "error"
+    );
+    if (io && userNotif) {
+      io.to(`user-${rental.user_id}`).emit("new_notification", userNotif);
+    }
+
+    res.json({
       message: "Rental cancelled by admin successfully",
       requiresRefund,
       refundAmount: rental.total_price,

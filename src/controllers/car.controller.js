@@ -50,7 +50,7 @@ exports.getCars = async (req, res) => {
 exports.getCarById = async (req, res) => {
   try {
     const car = await pool.query(
-      "SELECT id, brand, model, price_per_day, available, image, description, fuel_type, transmission FROM cars WHERE id=$1",
+      "SELECT id, brand, model, price_per_day, promotion_price, available, image, description, fuel_type, transmission FROM cars WHERE id=$1",
       [req.params.id]
     );
     if (!car.rows.length) return res.status(404).json({ message: "Car not found" });
@@ -62,7 +62,7 @@ exports.getCarById = async (req, res) => {
 
 exports.addCar = async (req, res) => {
   try {
-    const { brand, model, price_per_day, status, description, fuel_type, transmission } = req.body;
+    const { brand, model, price_per_day, promotion_price, status, description, fuel_type, transmission } = req.body;
     if (!brand || !model || !price_per_day) {
       return res.status(400).json({ message: "Missing fields" });
     }
@@ -71,9 +71,9 @@ exports.addCar = async (req, res) => {
     const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
 
     const car = await pool.query(
-      `INSERT INTO cars (brand, model, price_per_day, available, image, description, fuel_type, transmission)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [brand, model, Number(price_per_day), isAvailable, imageUrl, description || null, fuel_type || 'Essence', transmission || 'Manuelle']
+      `INSERT INTO cars (brand, model, price_per_day, promotion_price, available, image, description, fuel_type, transmission)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [brand, model, Number(price_per_day), promotion_price ? Number(promotion_price) : null, isAvailable, imageUrl, description || null, fuel_type || 'Essence', transmission || 'Manuelle']
     );
 
     const newCar = car.rows[0];
@@ -90,7 +90,7 @@ exports.addCar = async (req, res) => {
 exports.updateCar = async (req, res) => {
   try {
     const { id } = req.params;
-    const { brand, model, price_per_day, available, status, description, fuel_type, transmission } = req.body;
+    const { brand, model, price_per_day, promotion_price, available, status, description, fuel_type, transmission } = req.body;
 
     let isAvailable = available;
     if (status !== undefined) isAvailable = (status === 'available');
@@ -117,16 +117,24 @@ exports.updateCar = async (req, res) => {
       }
     }
 
-    const car = await pool.query(
-      `UPDATE cars SET
+    let qBase = `UPDATE cars SET
         brand=COALESCE($1,brand), model=COALESCE($2,model),
         price_per_day=COALESCE($3,price_per_day), available=COALESCE($4,available),
         description=COALESCE($5,description),
         fuel_type=COALESCE($6,fuel_type), transmission=COALESCE($7,transmission),
-        image=COALESCE($9,image)
-       WHERE id=$8 RETURNING *`,
-      [brand ?? null, model ?? null, price_per_day !== undefined ? Number(price_per_day) : null, isAvailable !== undefined ? isAvailable : null, description ?? null, fuel_type ?? null, transmission ?? null, id, imageUrl ?? null]
-    );
+        image=COALESCE($9,image)`;
+    
+    const params = [brand ?? null, model ?? null, price_per_day !== undefined ? Number(price_per_day) : null, isAvailable !== undefined ? isAvailable : null, description ?? null, fuel_type ?? null, transmission ?? null, id, imageUrl ?? null];
+    
+    if (promotion_price !== undefined) {
+      qBase += `, promotion_price=$10`;
+      params.push(promotion_price ? Number(promotion_price) : null);
+    }
+    
+    qBase += ` WHERE id=$8 RETURNING *`;
+    
+    const car = await pool.query(qBase, params);
+    
     if (!car.rows.length) return res.status(404).json({ message: "Car not found" });
 
     res.status(200).json({
@@ -398,5 +406,95 @@ exports.unarchiveCar = async (req, res) => {
   } catch (error) {
     console.error("UNARCHIVE CAR ERROR:", error);
     res.status(500).json({ message: "Erreur serveur" });
+  }
+};
+
+// AI YIELD MANAGEMENT
+exports.getAIYieldAnalysis = async (req, res) => {
+  try {
+    // 1. Get stats for all unarchived cars
+    const statsQuery = await pool.query(`
+      SELECT 
+        c.id, c.brand, c.model, c.price_per_day, c.promotion_price, c.available,
+        COUNT(r.id) as total_rentals,
+        MAX(r.end_date) as last_rental_end,
+        COALESCE(SUM(r.total_price), 0) as total_revenue
+      FROM cars c
+      LEFT JOIN rentals r ON c.id = r.car_id AND r.status IN ('completed', 'ongoing', 'confirmed')
+      WHERE (c.archived = false OR c.archived IS NULL)
+      GROUP BY c.id
+      ORDER BY total_rentals DESC
+    `);
+
+    const carsData = statsQuery.rows;
+
+    const systemPrompt = `Tu es un expert en Yield Management (tarification dynamique) pour une agence de location de voitures.
+Je vais te fournir les statistiques de l'agence. Tu dois analyser quelles voitures méritent une baisse de prix (promotion) pour booster les ventes, et quelles voitures peuvent voir leur tarif de base augmenter car elles sont très populaires.
+
+Retourne EXACTEMENT un objet JSON valide (aucun blabla avant ni après) avec le format suivant:
+[
+  {
+    "car_id": 1,
+    "action": "decrease", // ou "increase"
+    "suggested_price": 70, // le nouveau prix conseillé
+    "reason": "Cette voiture n'a pas été louée récemment, une promotion de 10 DT est idéale pour attirer les clients."
+  }
+]
+Veille à ce que le résultat soit exclusivement du JSON. Ne met pas de backticks \`\`\`.
+
+Voici les données des voitures:
+${JSON.stringify(carsData)}
+`;
+
+    const result = await geminiModel.generateContent(systemPrompt);
+    const responseText = result.response.text().trim();
+    
+    // Clean up potential markdown blocks
+    let jsonOutput = responseText;
+    if (jsonOutput.startsWith('\`\`\`json')) {
+      jsonOutput = jsonOutput.substring(7);
+      if (jsonOutput.endsWith('\`\`\`')) jsonOutput = jsonOutput.substring(0, jsonOutput.length - 3);
+    } else if (jsonOutput.startsWith('\`\`\`')) {
+      jsonOutput = jsonOutput.substring(3);
+      if (jsonOutput.endsWith('\`\`\`')) jsonOutput = jsonOutput.substring(0, jsonOutput.length - 3);
+    }
+
+    const suggestions = JSON.parse(jsonOutput);
+    res.json(suggestions);
+  } catch (err) {
+    console.error("YIELD ANALYSIS ERROR:", err);
+    res.status(500).json({ message: "Échec de l'analyse IA." });
+  }
+};
+
+exports.applyAIPrice = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { action, suggested_price } = req.body;
+    
+    let query = "";
+    if (action === "decrease") {
+      // Set promotion_price
+      query = "UPDATE cars SET promotion_price = $1 WHERE id = $2 RETURNING *";
+    } else if (action === "increase") {
+      // Update base price and remove promotion
+      query = "UPDATE cars SET price_per_day = $1, promotion_price = NULL WHERE id = $2 RETURNING *";
+    } else {
+      return res.status(400).json({ message: "Action invalide." });
+    }
+
+    const car = await pool.query(query, [suggested_price, id]);
+    
+    if (!car.rows.length) {
+      return res.status(404).json({ message: "Voiture introuvable." });
+    }
+
+    res.json({
+      message: "Prix mis à jour avec succès !",
+      car: car.rows[0]
+    });
+  } catch (err) {
+    console.error("APPLY AI PRICE ERROR:", err);
+    res.status(500).json({ message: "Erreur lors de la mise à jour du prix." });
   }
 };

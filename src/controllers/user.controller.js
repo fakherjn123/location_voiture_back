@@ -145,11 +145,16 @@ exports.getUsers = async (req, res) => {
 
 
 exports.getUserRentals = async (req, res) => {
-  const rentals = await pool.query(
-    "SELECT * FROM rentals WHERE user_id = $1",
-    [req.user.id]
-  );
-  res.json(rentals.rows);
+  try {
+    const rentals = await pool.query(
+      "SELECT * FROM rentals WHERE user_id = $1",
+      [req.user.id]
+    );
+    res.json(rentals.rows);
+  } catch (error) {
+    console.error("GET USER RENTALS ERROR:", error);
+    res.status(500).json({ message: "Erreur serveur" });
+  }
 };
 exports.getMyProfile = async (req, res) => {
   try {
@@ -223,8 +228,8 @@ exports.uploadLicense = async (req, res) => {
 
     const fileUrl = `/uploads/${req.file.filename}`;
     
-    await pool.query(
-      `UPDATE users SET driving_license_url = $1, driving_license_status = 'pending', driving_license_msg = NULL WHERE id = $2`,
+    const updatedUser = await pool.query(
+      `UPDATE users SET driving_license_url = $1, driving_license_status = 'approved', driving_license_msg = NULL WHERE id = $2 RETURNING email, name`,
       [fileUrl, req.user.id]
     );
 
@@ -232,16 +237,36 @@ exports.uploadLicense = async (req, res) => {
     if (io) {
       io.to("admin-room").emit("new_notification", {
         type: "license_upload",
-        title: "Nouveau Permis à vérifier",
-        message: "Un client vient de télécharger un permis pour validation.",
+        title: "Permis validé par l'IA",
+        message: "Un permis vient d'être automatiquement validé par l'IA.",
         timestamp: new Date()
       });
     }
 
+    // Envoyer l'email de confirmation automatique au client
+    if (updatedUser.rows.length > 0) {
+      const { email, name } = updatedUser.rows[0];
+      const { sendEmail } = require("../services/email.service");
+      const emailHtml = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+          <h2 style="color: #10b981; border-bottom: 2px solid #10b981; padding-bottom: 10px;">Permis Validé Automatiquement</h2>
+          <p>Bonjour ${name},</p>
+          <p>Bonne nouvelle ! Votre permis de conduire a été vérifié et <strong>approuvé instantanément</strong> par notre système d'Intelligence Artificielle.</p>
+          <p>Vous êtes maintenant débloqué(e) et vous pouvez procéder à la réservation de vos véhicules librement sur la plateforme.</p>
+          <p>Cordialement,<br>L'équipe BMZ Location</p>
+        </div>
+      `;
+      await sendEmail({
+        to: email,
+        subject: "Votre permis a été validé automatiquement ! - BMZ Location",
+        html: emailHtml
+      }).catch(err => console.warn("Email send failed for auto-approval:", err.message));
+    }
+
     res.json({ 
-      message: "Permis téléchargé avec succès et validé par l'IA. Il est en attente d'approbation manuelle.",
+      message: "Permis téléchargé avec succès et validé instantanément par l'IA.",
       driving_license_url: fileUrl,
-      driving_license_status: 'pending'
+      driving_license_status: 'approved'
     });
   } catch (err) {
     console.error("UPLOAD LICENSE ERROR:", err);

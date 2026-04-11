@@ -31,6 +31,10 @@ app.use("/api/services", require("./routes/service.routes"));
 app.use("/api/hero", require("./routes/hero.routes"));
 app.use("/api/delivery", require("./routes/delivery.routes"));
 app.use("/api/contacts", require("./routes/contact.routes"));
+app.use("/api/promos", require("./routes/promo.routes"));
+app.use("/api/export", require("./routes/export.routes"));
+app.use("/api/notifications", require("./routes/notification.routes"));
+app.use("/api/inspections", require("./routes/inspection.routes"));
 
 
 module.exports = app;

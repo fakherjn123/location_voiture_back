@@ -9,7 +9,7 @@ exports.getStats = async (req, res) => {
     const stats = await pool.query(`
       SELECT
         (SELECT COUNT(*) FROM cars) AS total_cars,
-        (SELECT COUNT(*) FROM cars WHERE is_active = true) AS active_cars,
+        (SELECT COUNT(*) FROM cars WHERE available = true) AS active_cars,
         (SELECT COUNT(*) FROM rentals) AS total_rentals,
         (SELECT COUNT(*) FROM rentals WHERE status = 'ongoing') AS ongoing_rentals,
         (SELECT COUNT(*) FROM rentals WHERE status = 'confirmed') AS confirmed_rentals,

@@ -322,6 +322,14 @@ exports.createPayment = async (req, res) => {
     });
 
     if (contractPath && fs.existsSync(contractPath)) {
+      const { triggerN8n } = require("../services/n8n.service");
+      triggerN8n(process.env.N8N_WEBHOOK_DOCUMENT_BACKUP, {
+        event: "new_contract",
+        rental_id: rental.id,
+        filename: `contrat-${rental.id}.pdf`,
+        customer: rental.name,
+      }, contractPath);
+
       fs.unlinkSync(contractPath);
     }
 
@@ -517,6 +525,14 @@ exports.confirmCashPayment = async (req, res) => {
     });
 
     if (contractPath && fs.existsSync(contractPath)) {
+      const { triggerN8n } = require("../services/n8n.service");
+      triggerN8n(process.env.N8N_WEBHOOK_DOCUMENT_BACKUP, {
+        event: "new_contract",
+        rental_id: payment.rental_id,
+        filename: `contrat-${payment.rental_id}.pdf`,
+        customer: payment.name,
+      }, contractPath);
+
       fs.unlinkSync(contractPath);
     }
 

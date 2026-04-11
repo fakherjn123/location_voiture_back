@@ -15,4 +15,8 @@ router.get("/car/:car_id", auth, role(["admin"]), rentalController.getRentalsByC
 router.get("/dates/:car_id", rentalController.getCarBookedDates);
 router.put("/cancel/:id", auth, rentalController.cancelRental);
 
+// Route admin uniquement pour annuler une location
+router.put("/admin/cancel/:id", auth, role(["admin"]), rentalController.adminCancelRental);
+
 module.exports = router;
+

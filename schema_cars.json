@@ -1,0 +1,70 @@
+[
+  {
+    "column_name": "id",
+    "data_type": "integer"
+  },
+  {
+    "column_name": "brand",
+    "data_type": "character varying"
+  },
+  {
+    "column_name": "model",
+    "data_type": "character varying"
+  },
+  {
+    "column_name": "price_per_day",
+    "data_type": "numeric"
+  },
+  {
+    "column_name": "available",
+    "data_type": "boolean"
+  },
+  {
+    "column_name": "is_active",
+    "data_type": "boolean"
+  },
+  {
+    "column_name": "image",
+    "data_type": "text"
+  },
+  {
+    "column_name": "status",
+    "data_type": "character varying"
+  },
+  {
+    "column_name": "insurance_expiry",
+    "data_type": "timestamp without time zone"
+  },
+  {
+    "column_name": "technical_control_expiry",
+    "data_type": "timestamp without time zone"
+  },
+  {
+    "column_name": "description",
+    "data_type": "text"
+  },
+  {
+    "column_name": "fuel_type",
+    "data_type": "character varying"
+  },
+  {
+    "column_name": "transmission",
+    "data_type": "character varying"
+  },
+  {
+    "column_name": "year",
+    "data_type": "integer"
+  },
+  {
+    "column_name": "seats",
+    "data_type": "integer"
+  },
+  {
+    "column_name": "mileage",
+    "data_type": "integer"
+  },
+  {
+    "column_name": "archived",
+    "data_type": "boolean"
+  }
+]

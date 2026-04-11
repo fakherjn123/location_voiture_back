@@ -21,10 +21,32 @@ io.on('connection', (socket) => {
     console.log("Admin joined room:", socket.id);
   });
 
+  socket.on("join-user", (userId) => {
+    socket.join(`user-${userId}`);
+    console.log(`User ${userId} joined their private room:`, socket.id);
+  });
+
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
   });
 });
+
+const fs = require('fs');
+const path = require('path');
+const dbPool = require('./config/db');
+
+(async () => {
+  try {
+    const sqlFile = path.join(__dirname, 'config', 'add_premium_features.sql');
+    if (fs.existsSync(sqlFile)) {
+      const sql = fs.readFileSync(sqlFile, 'utf-8');
+      await dbPool.query(sql);
+      console.log('✅✅ SQL MIGRATIONS APPLIED SUCCESSFULLY! ✅✅');
+    }
+  } catch (err) {
+    console.error('❌ MIGRATION ERROR:', err.message);
+  }
+})();
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {

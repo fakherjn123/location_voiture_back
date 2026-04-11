@@ -1,11 +1,11 @@
 const { Pool } = require('pg');
 
 const pool = new Pool({
-  user: 'postgres',
-  host: 'localhost',
-  database: 'PFE',
-  password: '29154698',
-  port: 5432,
+  user: process.env.DB_USER || 'postgres',
+  host: process.env.DB_HOST || 'localhost',
+  database: process.env.DB_NAME || 'location_voiture',
+  password: process.env.DB_PASSWORD || '29154698',
+  port: process.env.DB_PORT || 5432,
 });
 
 // Auto-migration: add 'archived' column if it doesn't exist
@@ -20,3 +20,4 @@ pool.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS refund_status VARCHAR(
 
 
 module.exports = pool;
+// Trigger restart
