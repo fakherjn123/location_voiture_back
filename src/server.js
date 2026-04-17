@@ -36,15 +36,22 @@ const path = require('path');
 const dbPool = require('./config/db');
 
 (async () => {
-  try {
-    const sqlFile = path.join(__dirname, 'config', 'add_premium_features.sql');
-    if (fs.existsSync(sqlFile)) {
-      const sql = fs.readFileSync(sqlFile, 'utf-8');
-      await dbPool.query(sql);
-      console.log('✅✅ SQL MIGRATIONS APPLIED SUCCESSFULLY! ✅✅');
+  const migrations = [
+    'add_premium_features.sql',
+    'add_refund_status.sql',
+    'add_cancellation_policy.sql',
+  ];
+  for (const file of migrations) {
+    try {
+      const sqlFile = path.join(__dirname, 'config', file);
+      if (fs.existsSync(sqlFile)) {
+        const sql = fs.readFileSync(sqlFile, 'utf-8');
+        await dbPool.query(sql);
+        console.log(`✅ Migration applied: ${file}`);
+      }
+    } catch (err) {
+      console.error(`❌ Migration error (${file}):`, err.message);
     }
-  } catch (err) {
-    console.error('❌ MIGRATION ERROR:', err.message);
   }
 })();
 

@@ -109,6 +109,8 @@ exports.getUsers = async (req, res) => {
         u.driving_license_url,
         u.driving_license_status,
         u.driving_license_msg,
+        u.is_banned,
+        u.ban_reason,
         -- Total locations (excl. cancelled)
         (
           SELECT COUNT(*)
@@ -337,4 +339,25 @@ exports.logout = (req, res) => {
   return res.status(200).json({
     message: "Déconnexion réussie"
   });
+};
+
+exports.toggleBanStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { is_banned, ban_reason } = req.body;
+
+    const result = await pool.query(
+      `UPDATE users SET is_banned = $1, ban_reason = $2 WHERE id = $3 RETURNING id, name, email, is_banned, ban_reason`,
+      [is_banned, is_banned ? ban_reason : null, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "Utilisateur non trouvé" });
+    }
+
+    res.json({ message: is_banned ? "Compte suspendu" : "Compte réactivé", user: result.rows[0] });
+  } catch (err) {
+    console.error("TOGGLE BAN ERROR:", err);
+    res.status(500).json({ message: "Erreur serveur" });
+  }
 };

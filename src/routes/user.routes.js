@@ -18,6 +18,7 @@ router.post("/logout", auth, userController.logout);
 router.post("/add-client", auth, role(["admin"]), userController.addClient);
 router.get("/", auth, role(["admin"]), userController.getUsers);
 router.put("/:id/license-status", auth, role(["admin"]), userController.updateLicenseStatus);
+router.put("/:id/ban", auth, role(["admin"]), userController.toggleBanStatus);
 
    
  

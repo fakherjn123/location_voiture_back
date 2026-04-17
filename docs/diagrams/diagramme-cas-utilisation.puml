@@ -1,0 +1,120 @@
+@startuml
+title Diagramme de cas d'utilisation - Plateforme BMZ Location
+
+left to right direction
+skinparam shadowing false
+
+actor Client
+actor Admin
+actor "Google OAuth" as Google
+actor "Service IA" as AI
+actor "Service Email" as Mail
+actor "Google Maps API" as Maps
+actor "n8n" as N8N
+
+rectangle "Systeme BMZ Location" {
+  usecase "S'inscrire" as UC1
+  usecase "Se connecter" as UC2
+  usecase "Se connecter avec Google" as UC3
+  usecase "Gerer son profil" as UC4
+  usecase "Televerser le permis" as UC5
+  usecase "Consulter les voitures" as UC6
+  usecase "Verifier la disponibilite" as UC7
+  usecase "Obtenir une recommandation" as UC8
+  usecase "Reserver une voiture" as UC9
+  usecase "Appliquer un code promo" as UC10
+  usecase "Demander une livraison" as UC11
+  usecase "Payer la reservation" as UC12
+  usecase "Consulter ses locations" as UC13
+  usecase "Consulter ses factures" as UC14
+  usecase "Annuler une reservation" as UC15
+  usecase "Laisser un avis" as UC16
+  usecase "Consulter ses notifications" as UC17
+  usecase "Envoyer un message de contact" as UC18
+
+  usecase "Gerer les utilisateurs" as UA1
+  usecase "Valider ou refuser les permis" as UA2
+  usecase "Gerer les voitures" as UA3
+  usecase "Archiver un vehicule" as UA4
+  usecase "Appliquer une tarification IA" as UA5
+  usecase "Suivre les reservations" as UA6
+  usecase "Confirmer un paiement cash" as UA7
+  usecase "Rejeter un paiement cash" as UA8
+  usecase "Traiter un remboursement" as UA9
+  usecase "Gerer les codes promo" as UA10
+  usecase "Gerer la maintenance" as UA11
+  usecase "Gerer les livraisons et retours" as UA12
+  usecase "Gerer les inspections" as UA13
+  usecase "Consulter le dashboard" as UA14
+  usecase "Consulter les insights IA" as UA15
+  usecase "Gerer les contacts et contenus hero" as UA16
+  usecase "Exporter les locations" as UA17
+
+  usecase "Envoyer des emails" as US1
+  usecase "Envoyer des notifications temps reel" as US2
+  usecase "Verifier ou generer par IA" as US3
+  usecase "Calculer la distance de livraison" as US4
+  usecase "Executer des automatisations" as US5
+}
+
+Client -- UC1
+Client -- UC2
+Client -- UC3
+Client -- UC4
+Client -- UC5
+Client -- UC6
+Client -- UC7
+Client -- UC8
+Client -- UC9
+Client -- UC12
+Client -- UC13
+Client -- UC14
+Client -- UC15
+Client -- UC16
+Client -- UC17
+Client -- UC18
+
+Admin -- UA1
+Admin -- UA2
+Admin -- UA3
+Admin -- UA4
+Admin -- UA5
+Admin -- UA6
+Admin -- UA7
+Admin -- UA8
+Admin -- UA9
+Admin -- UA10
+Admin -- UA11
+Admin -- UA12
+Admin -- UA13
+Admin -- UA14
+Admin -- UA15
+Admin -- UA16
+Admin -- UA17
+
+UC3 ..> Google : <<include>>
+UC5 ..> US3 : <<include>>
+UC8 ..> US3 : <<include>>
+UC9 ..> UC7 : <<include>>
+UC9 ..> UC10 : <<extend>>
+UC9 ..> UC11 : <<extend>>
+UC9 ..> US2 : <<include>>
+UC9 ..> US5 : <<include>>
+UC11 ..> US4 : <<include>>
+UC12 ..> US1 : <<include>>
+UC12 ..> US2 : <<include>>
+UA2 ..> US1 : <<include>>
+UA5 ..> US3 : <<include>>
+UA7 ..> US1 : <<include>>
+UA8 ..> US1 : <<include>>
+UA9 ..> US1 : <<include>>
+UA12 ..> US1 : <<include>>
+UA13 ..> US2 : <<include>>
+UA15 ..> US3 : <<include>>
+
+Mail -- US1
+AI -- US3
+Maps -- US4
+N8N -- US5
+
+@enduml

@@ -1,0 +1,89 @@
+@startuml
+title Diagramme de sequence - Reservation et paiement d'un vehicule
+
+skinparam shadowing false
+autonumber
+
+actor Client
+participant "API Express" as API
+participant "Auth Middleware" as Auth
+participant "RentalController" as RentalCtrl
+participant "Google Maps API" as Maps
+database "PostgreSQL" as DB
+participant "NotificationController" as NotifCtrl
+participant "Socket.IO" as Socket
+participant "PaymentController" as PayCtrl
+participant "PDF Service" as PDF
+participant "Email Service" as Mail
+participant "n8n" as N8N
+
+Client -> API: POST /api/rentals
+API -> Auth: Verifier le JWT
+Auth --> API: Utilisateur authentifie
+API -> RentalCtrl: rentCar()
+
+RentalCtrl -> DB: Verifier le permis du client
+DB --> RentalCtrl: driving_license_status
+
+RentalCtrl -> DB: Charger la voiture
+DB --> RentalCtrl: Voiture trouvee
+
+RentalCtrl -> DB: Verifier maintenance et conflits de dates
+DB --> RentalCtrl: Disponibilite validee
+
+opt Livraison demandee
+  RentalCtrl -> Maps: Calculer la distance
+  Maps --> RentalCtrl: distance_km
+end
+
+opt Code promo ou fidelite
+  RentalCtrl -> DB: Lire promo_codes / points
+  DB --> RentalCtrl: Remise calculee
+end
+
+RentalCtrl -> DB: Inserer Rental(status='pending')
+DB --> RentalCtrl: Reservation creee
+
+RentalCtrl -> NotifCtrl: Creer notification admin
+NotifCtrl -> DB: INSERT notification
+NotifCtrl --> RentalCtrl: Notification admin
+
+RentalCtrl -> NotifCtrl: Creer notification client
+NotifCtrl -> DB: INSERT notification
+NotifCtrl --> RentalCtrl: Notification client
+
+RentalCtrl -> Socket: Emit new_notification
+RentalCtrl -> N8N: Webhook new_rental
+RentalCtrl --> API: Reservation temporaire
+API --> Client: Dossier de reservation cree
+
+Client -> API: POST /api/payments
+API -> Auth: Verifier le JWT
+Auth --> API: Utilisateur authentifie
+API -> PayCtrl: createPayment()
+
+PayCtrl -> DB: Charger rental + user + car
+DB --> PayCtrl: Donnees chargees
+
+PayCtrl -> DB: Verifier absence de double paiement
+DB --> PayCtrl: Paiement autorise
+
+alt Paiement par carte
+  PayCtrl -> DB: INSERT Payment(status='paid')
+  PayCtrl -> DB: UPDATE Rental(status='confirmed')
+  PayCtrl -> DB: UPDATE points utilisateur
+  PayCtrl -> DB: INSERT Facture
+  PayCtrl -> PDF: Generer contrat PDF
+  PDF --> PayCtrl: contrat.pdf
+  PayCtrl -> Mail: Envoyer email + PDF
+else Paiement en especes
+  PayCtrl -> DB: INSERT Payment(status='pending')
+  PayCtrl -> DB: UPDATE Rental(status='awaiting_payment')
+  PayCtrl -> Mail: Envoyer email de mise en attente
+end
+
+PayCtrl -> Socket: Notifier l'administrateur
+PayCtrl --> API: Paiement traite
+API --> Client: Confirmation
+
+@enduml

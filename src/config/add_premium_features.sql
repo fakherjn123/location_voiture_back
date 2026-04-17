@@ -42,3 +42,15 @@ CREATE TABLE IF NOT EXISTS inspections (
   admin_id INTEGER REFERENCES users(id),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 5. Table des Coordonnées de contact (CMS)
+CREATE TABLE IF NOT EXISTS contact_details (
+  id SERIAL PRIMARY KEY,
+  type VARCHAR(50) NOT NULL,   -- 'address', 'phone', 'email', 'hours'
+  label VARCHAR(100) NOT NULL,
+  value TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 6. Colonne description dans promo_codes (si absente)
+ALTER TABLE promo_codes ADD COLUMN IF NOT EXISTS description TEXT;

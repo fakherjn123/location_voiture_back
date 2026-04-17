@@ -1,0 +1,186 @@
+@startuml
+title Diagramme de classes - Plateforme BMZ Location
+
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam packageStyle rectangle
+
+package "Noyau metier" {
+  class User {
+    +id: int
+    +name: string
+    +email: string
+    +password: string
+    +role: string
+    +points: int
+    +driving_license_url: string
+    +driving_license_status: string
+    +driving_license_msg: string
+  }
+
+  class Car {
+    +id: int
+    +brand: string
+    +model: string
+    +price_per_day: decimal
+    +promotion_price: decimal
+    +available: boolean
+    +archived: boolean
+    +image: string
+    +description: text
+    +fuel_type: string
+    +transmission: string
+    +insurance_expiry: datetime
+    +technical_control_expiry: datetime
+  }
+
+  class Rental {
+    +id: int
+    +start_date: date
+    +end_date: date
+    +total_price: decimal
+    +status: string
+    +promo_code: string
+    +discount_amount: decimal
+    +delivery_requested: boolean
+    +delivery_address: text
+    +delivery_lat: decimal
+    +delivery_lng: decimal
+    +delivery_distance_km: decimal
+    +delivery_fee: decimal
+    +return_fee: decimal
+    +delivery_status: string
+    +return_status: string
+    +delivery_time: string
+  }
+
+  class Payment {
+    +id: int
+    +amount: decimal
+    +method: string
+    +status: string
+    +refund_status: string
+    +created_at: datetime
+  }
+
+  class Facture {
+    +id: int
+    +total: decimal
+    +created_at: datetime
+  }
+
+  class Review {
+    +id: int
+    +rating: int
+    +comment: text
+    +ai_reply: text
+    +created_at: datetime
+  }
+}
+
+package "Fonctionnalites avancees" {
+  class PromoCode {
+    +id: int
+    +code: string
+    +discount_type: string
+    +discount_value: decimal
+    +expiration_date: datetime
+    +usage_limit: int
+    +used_count: int
+    +is_active: boolean
+    +description: text
+  }
+
+  class Notification {
+    +id: int
+    +title: string
+    +message: text
+    +type: string
+    +is_read: boolean
+    +created_at: datetime
+  }
+
+  class Inspection {
+    +id: int
+    +type: string
+    +fuel_level: int
+    +mileage: int
+    +exterior_notes: text
+    +interior_notes: text
+    +photos: json
+    +client_signature: boolean
+    +admin_signature: boolean
+    +created_at: datetime
+  }
+
+  class Service {
+    +id: int
+    +service_type: string
+    +details: string
+    +due_date: datetime
+    +status: string
+    +estimated_cost: decimal
+    +created_at: datetime
+  }
+}
+
+package "CMS et communication" {
+  class Contact {
+    +id: int
+    +name: string
+    +email: string
+    +phone: string
+    +subject: string
+    +message: text
+    +status: string
+    +created_at: datetime
+  }
+
+  class ContactDetail {
+    +id: int
+    +type: string
+    +label: string
+    +value: text
+    +created_at: datetime
+  }
+
+  class HeroImage {
+    +id: int
+    +image_url: string
+    +is_active: boolean
+    +created_at: datetime
+  }
+}
+
+User "1" -- "0..*" Rental : effectue
+Car "1" -- "0..*" Rental : concerne
+Rental "1" -- "0..1" Payment : donne_lieu_a
+Rental "1" -- "0..1" Facture : genere
+User "1" -- "0..*" Facture : recoit
+
+User "1" -- "0..*" Review : redige
+Car "1" -- "0..*" Review : recoit
+
+PromoCode "1" .. "0..*" Rental : applique_a
+
+User "0..1" -- "0..*" Notification : recoit
+
+Rental "1" -- "0..*" Inspection : comporte
+Inspection "1" --> "1" User : client
+Inspection "0..1" --> "1" User : admin
+
+Car "1" -- "0..*" Service : planifie
+
+note bottom of Rental
+Le statut d'une location evolue principalement entre:
+pending, awaiting_payment, confirmed,
+ongoing, completed, cancelled.
+end note
+
+note bottom of Payment
+Le paiement peut etre:
+pending, paid ou cancelled.
+Le remboursement est gere via refund_status.
+end note
+
+@enduml

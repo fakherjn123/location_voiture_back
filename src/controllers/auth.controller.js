@@ -5,19 +5,19 @@ const jwt = require("jsonwebtoken");
 
 exports.register = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, phone, birth_date } = req.body;
 
-    if (!name || !email || !password) {
+    if (!name || !email || !password || !phone || !birth_date) {
       return res.status(400).json({
-        message: "Name, email and password are required",
+        message: "Tous les champs sont requis (nom, email, mot de passe, téléphone, date de naissance)",
       });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const result = await pool.query(
-      "INSERT INTO users (name, email, password, role) VALUES ($1,$2,$3,'client') RETURNING id, name, email, role",
-      [name, email, hashedPassword]
+      "INSERT INTO users (name, email, password, phone, birth_date, role) VALUES ($1,$2,$3,$4,$5,'client') RETURNING id, name, email, role, phone, birth_date",
+      [name, email, hashedPassword, phone, birth_date]
     );
 
     res.status(201).json(result.rows[0]);
@@ -44,6 +44,10 @@ exports.login = async (req, res) => {
     }
 
     const user = result.rows[0];
+
+    if (user.is_banned) {
+      return res.status(403).json({ message: "Votre compte a été suspendu par l'administration. Raison: " + (user.ban_reason || "Non spécifiée") });
+    }
 
     if (!user.password) {
       return res.status(401).json({ message: "Ce compte utilise la connexion Google. Veuillez cliquer sur 'Continuer avec Google'." });

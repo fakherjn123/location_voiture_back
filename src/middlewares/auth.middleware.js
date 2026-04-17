@@ -1,11 +1,17 @@
 const jwt = require("jsonwebtoken");
+const { buildFrontendUrl } = require("../utils/frontend-url");
 
 module.exports = (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
 
     if (!authHeader) {
-      return res.status(401).json({ message: "No token" });
+      return res.status(401).json({
+        message: "No token",
+        code: "AUTH_REQUIRED",
+        redirectTo: "/login",
+        loginUrl: buildFrontendUrl(req, "/login"),
+      });
     }
 
     const token = authHeader.split(" ")[1];
@@ -16,6 +22,11 @@ module.exports = (req, res, next) => {
     next();
 
   } catch (err) {
-    return res.status(401).json({ message: "Invalid or expired token" });
+    return res.status(401).json({
+      message: "Invalid or expired token",
+      code: "AUTH_REQUIRED",
+      redirectTo: "/login",
+      loginUrl: buildFrontendUrl(req, "/login"),
+    });
   }
 };

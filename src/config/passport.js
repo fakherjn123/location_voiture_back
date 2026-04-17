@@ -21,7 +21,7 @@ passport.use(
 
         if (user.rows.length === 0) {
           user = await pool.query(
-            "INSERT INTO users (name, email, role) VALUES ($1,$2,'client') RETURNING *",
+            "INSERT INTO users (name, email, password, role) VALUES ($1,$2,'','client') RETURNING *",
             [name, email]
           );
         }
@@ -29,6 +29,7 @@ passport.use(
         return done(null, user.rows[0]);
 
       } catch (error) {
+        console.error("Google Auth Strategy Error:", error);
         return done(error, null);
       }
     }

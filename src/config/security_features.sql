@@ -1,0 +1,16 @@
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_banned BOOLEAN DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS ban_reason TEXT;
+
+ALTER TABLE rentals ADD COLUMN IF NOT EXISTS deposit_status VARCHAR(50) DEFAULT 'pending';
+ALTER TABLE rentals ADD COLUMN IF NOT EXISTS deposit_amount DECIMAL(10, 2) DEFAULT 0.00;
+ALTER TABLE rentals ADD COLUMN IF NOT EXISTS penalty_amount DECIMAL(10, 2) DEFAULT 0.00;
+ALTER TABLE rentals ADD COLUMN IF NOT EXISTS penalty_reason TEXT;
+
+CREATE TABLE IF NOT EXISTS vehicle_inspections (
+  id SERIAL PRIMARY KEY,
+  rental_id INTEGER REFERENCES rentals(id) ON DELETE CASCADE,
+  inspection_type VARCHAR(50) NOT NULL, -- 'checkin', 'checkout'
+  notes TEXT,
+  agent_id INTEGER REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
